@@ -5,17 +5,33 @@ count badge when updates are waiting.
 ## What it shows
 
 - Bar pill: `↓` when up to date (dimmed), `↓ N` when N updates are pending.
-- Tooltip: the repo/AUR breakdown, e.g. `Repo: 8 · AUR: 4 · Click to update`.
+- Tooltip: the breakdown, e.g. `Repo: 8 · AUR: 4 · Mise: 2 · Plugins: 1 · Themes: 0 · Click to update`.
 - Left click: opens `omarchy update` in your default terminal (via `xdg-terminal-exec`).
 - Middle click: forces an immediate recheck.
 
 ## How it checks
 
-`check-updates.sh` runs `checkupdates` (repo, from pacman-contrib) and
-`yay -Qua` (AUR, falls back to `paru -Qua`), and prints
-`<total> <repo> <aur>`. The widget polls it on a timer. Checking only
-counts; nothing here installs anything, installs go through
-`omarchy update` as Omarchy intends.
+`check-updates.sh` counts pending updates and prints
+`<total> <repo> <aur> <mise> <plugins> <themes>`:
+
+- Repo: `checkupdates` (from pacman-contrib).
+- AUR: `yay -Qua` (falls back to `paru -Qua`).
+- Mise: `mise outdated --json` (with `MISE_MINIMUM_RELEASE_AGE=0`, so the
+  count matches what an update installs; falls back to plain `mise outdated`
+  when `jq` is not installed).
+- Shell plugins: git checkouts in `~/.config/omarchy/plugins` whose tracked
+  branch is behind after a fetch (same approach as techspawn.updates).
+- Themes: git themes from `omarchy-theme-extras` whose upstream branch is
+  behind after a fetch.
+
+Checking only counts; nothing here installs anything. Click runs
+`omarchy update`, which covers system, AUR, and mise. Shell plugins and
+themes are counted here but updated separately (`omarchy plugin update`,
+theme git pull), so the badge can still show those after an `omarchy update`
+until they are updated.
+
+Mise, plugin, and theme counting was inspired by
+[techspawn.updates](https://github.com/RajShimpi/omarchy-updates) (MIT).
 
 ## Install
 
@@ -43,8 +59,9 @@ edit it to pin a specific terminal (e.g. `kitty omarchy update`).
 
 ## Notes
 
-- First check can take a few seconds: `checkupdates` syncs the package
-  databases, and the AUR query takes a moment.
+- First check can take a while: `checkupdates` syncs the package
+  databases, the AUR query takes a moment, and plugin/theme checks fetch
+  each git remote.
 - If you renamed the plugin directory, update the script path in
   `BarWidget.qml` (`checkProc.command`) to match.
 - Designed for a horizontal (top/bottom) bar. The pill follows the bar
