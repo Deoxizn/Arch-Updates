@@ -1,5 +1,5 @@
 # Arch Updates
-Stellarchy-style count badge for the Omarchy quattro bar. Dim when clean,
+Number based count badge for the Omarchy quattro bar. Dim when clean,
 count badge when updates are waiting.
 
 ## What it shows
