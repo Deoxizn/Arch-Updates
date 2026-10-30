@@ -18,8 +18,9 @@ BarWidget {
   id: root
   moduleName: "devi.arch-updates"
 
-  // Command run on left click. Change it if you prefer another terminal.
-  property string updateCommand: "kitty omarchy update"
+  // Command run on left click. Uses your Omarchy default terminal via
+  // xdg-terminal-exec; change it to pin a specific one, e.g. kitty.
+  property string updateCommand: "xdg-terminal-exec omarchy update"
 
   // Minutes between update checks. Change this number to suit.
   property int intervalMinutes: 60

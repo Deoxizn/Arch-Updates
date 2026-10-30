@@ -6,7 +6,7 @@ count badge when updates are waiting.
 
 - Bar pill: `↓` when up to date (dimmed), `↓ N` when N updates are pending.
 - Tooltip: the repo/AUR breakdown, e.g. `Repo: 8 · AUR: 4 · Click to update`.
-- Left click: opens `omarchy update` in kitty.
+- Left click: opens `omarchy update` in your default terminal (via `xdg-terminal-exec`).
 - Middle click: forces an immediate recheck.
 
 ## How it checks
@@ -37,8 +37,9 @@ Check interval: edit `intervalMinutes` at the top of `BarWidget.qml`
 (minutes between checks, default 60), then restart the shell if it does
 not pick it up live.
 
-Update command: edit `updateCommand` at the top of `BarWidget.qml`
-if you prefer another terminal.
+Update command: `updateCommand` at the top of `BarWidget.qml` runs
+`omarchy update` in your default terminal via `xdg-terminal-exec`;
+edit it to pin a specific terminal (e.g. `kitty omarchy update`).
 
 ## Notes
 
