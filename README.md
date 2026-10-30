@@ -20,13 +20,16 @@ counts; nothing here installs anything, installs go through
 ## Install
 
 ```bash
-tar xzf arch-updates-plugin.tar.gz -C ~/.config/omarchy/plugins/
+omarchy plugin add https://github.com/Deoxizn/Arch-Updates.git --enable
 chmod +x ~/.config/omarchy/plugins/devi.arch-updates/check-updates.sh
 command -v checkupdates || omarchy-pkg-add pacman-contrib
-omarchy-shell shell rescanPlugins
-omarchy bar put devi.arch-updates --section right
 omarchy restart shell
 ```
+
+If you installed the tarball manually first, remove
+`~/.config/omarchy/plugins/devi.arch-updates/` before the `plugin add`
+so the clone lands clean. If the pill doesn't appear on the right,
+place it with `omarchy bar put devi.arch-updates --section right`.
 
 ## Settings
 
