@@ -1,5 +1,4 @@
-# Arch Updates (devi.arch-updates)
-
+# Arch Updates
 Stellarchy-style count badge for the Omarchy quattro bar. Dim when clean,
 count badge when updates are waiting.
 
