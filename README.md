@@ -1,10 +1,10 @@
 # Arch Updates
-Number based count badge for the Omarchy quattro bar. Dim when clean,
-count badge when updates are waiting.
+Icon badge for the Omarchy quattro bar. Package icon when clean
+(dimmed), package-variant icon plus count when updates are waiting.
 
 ## What it shows
 
-- Bar pill: `↓` when up to date (dimmed), `↓ N` when N updates are pending.
+- Bar pill: package icon (nf-oct-package, U+F487) when up to date (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus `N` when N updates are pending.
 - Tooltip: the breakdown, e.g. `Repo: 8 · AUR: 4 · Mise: 2 · Plugins: 1 · Themes: 0 · Click to update`.
 - Left click: opens `omarchy update` in your default terminal (via `xdg-terminal-exec`).
 - Middle click: forces an immediate recheck.
@@ -65,6 +65,9 @@ edit it to pin a specific terminal (e.g. `kitty omarchy update`).
 - If you renamed the plugin directory, update the script path in
   `BarWidget.qml` (`checkProc.command`) to match.
 - Designed for a horizontal (top/bottom) bar. The pill follows the bar
-  font like any other widget.
+  font like any other widget, and the icons are Nerd Font glyphs, so the
+  bar monospace font needs to be a Nerd Fonts v3 font. The package-variant
+  icon lives in the supplementary plane (U+F03D6), so an older v2 Nerd
+  Font will show the clean icon and a box for the pending icon.
 - If your bar hides non-workspace widgets on a secondary monitor, this
   badge only appears on the monitors that show the full bar.
