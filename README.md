@@ -4,7 +4,7 @@ Icon badge for the Omarchy quattro bar. Package icon when clean
 
 ## What it shows
 
-- Bar pill: package icon (nf-oct-package, U+F487) when up to date (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus `N` when N updates are pending.
+- Bar pill: package icon () when up to date (dimmed), package-variant icon (󰏖) plus `N` when N updates are pending.
 - Tooltip: the breakdown, e.g. `Repo: 8 · AUR: 4 · Mise: 2 · Plugins: 1 · Themes: 0 · Click to update`.
 - Left click: opens `omarchy update` in your default terminal (via `xdg-terminal-exec`).
 - Middle click: forces an immediate recheck.
