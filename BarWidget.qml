@@ -3,15 +3,35 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 
-// Arch Updates: count badge for pending updates.
-// Stellarchy-style: dim when clean, count badge when updates are waiting.
+// Arch Updates: icon badge for pending updates.
+// No updates: nf-oct-package. Updates: nf-md-package_variant + count.
+//
+// Why this failed on Caelestia and should work on Omarchy:
+// Caelestia draws bar icons with Material Symbols Rounded and bar text
+// with Rubik, neither of which contains Nerd Font private-use glyphs, so
+// a Nerd glyph pasted into a Caelestia module had no font to fall back
+// to. Omarchy's bar text uses the system monospace font, and upstream
+// Omarchy's monospace is a Nerd Font, so the same glyphs have a font
+// to resolve against. The second glyph is the catch: it lives in the
+// supplementary plane, U+F03D6, so it needs a Nerd Fonts v3 font. An
+// older v2 Nerd Font will show the first icon and tofu on the second.
+// Test on the live bar before pushing: if the second icon is a box,
+// the font is the problem, not the codes.
+//
+// Glyphs are written literally here on purpose. Writing the second one
+// as "\udb80\udfd6" is also correct QML, but that escape has been
+// mangled by JSON/shell layers before, while a literal UTF-8 glyph
+// survives a plain file copy. Codes, for reference:
+//   no updates: nf-oct-package, U+F487, \uf487
+//   updates:    nf-md-package_variant, U+F03D6, \udb80\udfd6
 //
 // How it works: check-updates.sh counts repo (checkupdates), AUR
 // (yay/paru -Qua), mise dev tools (mise outdated), git shell plugins
 // (tracked branch behind) and git themes (upstream behind), and prints
 // "<total> <repo> <aur> <mise> <plugins> <themes>". This widget polls it on
-// a timer, shows the total as a badge, and puts the breakdown in the tooltip.
-// Left click opens the updater, middle click forces a refresh.
+// a timer, shows the icon plus total as a badge, and puts the breakdown
+// in the tooltip. Left click opens the updater, middle click forces a
+// refresh.
 //
 // Settings: edit intervalMinutes below (minutes between checks). Default 60.
 // If you rename this plugin, update the script path in checkProc.command.
@@ -29,6 +49,10 @@ BarWidget {
 
   // Minutes between update checks. Change this number to suit.
   property int intervalMinutes: 60
+
+  // Nerd Font icons, literal UTF-8 glyphs, see header comment.
+  property string noUpdatesIcon: ""
+  property string updatesIcon: "󰏖"
 
   property int totalCount: 0
   property int repoCount: 0
@@ -87,7 +111,7 @@ BarWidget {
   WidgetButton {
     id: badge
     bar: root.bar
-    text: root.hasUpdates ? "↓ " + root.totalCount : "↓"
+    text: root.hasUpdates ? root.updatesIcon + " " + root.totalCount : root.noUpdatesIcon
     opacity: root.hasUpdates ? 1 : 0.45
     horizontalMargin: 8
     verticalPadding: 6
