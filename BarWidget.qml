@@ -40,12 +40,16 @@ BarWidget {
   id: root
   moduleName: "devi.arch-updates"
 
-  // Command run on left click. Uses your Omarchy default terminal via
-  // xdg-terminal-exec; change it to pin a specific one, e.g. kitty.
+  // Command run on left click. Uses Omarchy's presentation wrapper, same
+  // as the stock SystemUpdate widget: it shows the Omarchy logo, runs the
+  // update, then waits for a keypress on Done/Failed, so the terminal
+  // stays open after a clean run instead of closing the second the
+  // update exits. Plain xdg-terminal-exec closed instantly on success,
+  // which looked like a crash at the AUR stage (the last step).
   // Note: omarchy update covers system, AUR and mise. Shell plugins and
   // themes are counted here but updated separately (omarchy plugin update,
   // theme git pull), so the badge can still show those after an update.
-  property string updateCommand: "xdg-terminal-exec omarchy update"
+  property string updateCommand: "omarchy-launch-floating-terminal-with-presentation omarchy update"
 
   // Minutes between update checks. Change this number to suit.
   property int intervalMinutes: 60
