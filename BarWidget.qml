@@ -38,9 +38,13 @@ import qs.Ui
 // and builds the hover tooltip from the detail lists (buildTooltip).
 // Left click opens the updater, middle click forces a refresh.
 //
-// Tooltip note: the bubble is rendered by the bar, not this widget, so
-// its lines are centered, not left-aligned. A plain \n-separated string
-// is all the widget can hand it, and that renders as a vertical list.
+// Tooltip note: the bubble is rendered by the bar, not this widget, and
+// the bar centers every line (AlignHCenter, monospace bar font). A plain
+// \n-separated string is all the widget can hand it. buildTooltip works
+// around the centering by padding every line with spaces to the longest
+// line's length: equal-length lines center to the same left edge, which
+// reads as left-aligned. That only holds because the bar font is
+// monospace; in a proportional font the padding would not line up.
 // v1.7.0 tried a click-to-open panel (Panel.qml) instead; the panel
 // window never mapped under the Nyxiri bar, and the hover list is what
 // was asked for, so the panel is gone as of v1.7.1.
@@ -102,23 +106,17 @@ BarWidget {
     if (!checkProc.running) checkProc.running = true
   }
 
-  // Build the hover tooltip from the detail lists. One section per
-  // non-empty category, rows "  name old → new" (plugins/themes show
-  // "  name (N commits behind)" instead). An old script that prints
-  // counts only leaves every list empty, so that falls back to the
-  // counts-only line. Stored in detailText, not computed in the binding,
-  // so it only changes when a check lands.
+  // Build the hover tooltip from the detail lists. All five sections are
+  // always shown, even at (0), rows "  name old → new" under the ones
+  // that have items (plugins/themes show "  name (N commits behind)"
+  // instead). An old script that prints counts only leaves every list
+  // empty, so that just shows the five headers with counts and no rows.
+  // Lines are padded with spaces to the longest line's length so the
+  // bar's centered tooltip reads as left-aligned (see header comment).
+  // Stored in detailText, not computed in the binding, so it only
+  // changes when a check lands.
   function buildTooltip() {
     if (!root.hasUpdates) return "No updates pending · Click to update"
-    var listsEmpty = root.repoList.length === 0 && root.aurList.length === 0
-      && root.miseList.length === 0 && root.pluginsList.length === 0
-      && root.themesList.length === 0
-    if (listsEmpty) {
-      return root.totalCount + " updates pending\n"
-        + "Repo: " + root.repoCount + " · AUR: " + root.aurCount
-        + " · Mise: " + root.miseCount + " · Plugins: " + root.pluginsCount
-        + " · Themes: " + root.themesCount + "\nClick to update"
-    }
     var lines = [root.totalCount + " updates pending"]
     var sections = [
       { title: "Repo", count: root.repoCount, list: root.repoList, versioned: true },
@@ -129,7 +127,6 @@ BarWidget {
     ]
     for (var s = 0; s < sections.length; s++) {
       var section = sections[s]
-      if (section.count <= 0) continue
       lines.push(section.title + " (" + section.count + ")")
       var shown = Math.min(section.list.length, root.tooltipRowsPerCategory)
       for (var i = 0; i < shown; i++) {
@@ -140,6 +137,11 @@ BarWidget {
       if (section.list.length > shown) lines.push("  …and " + (section.list.length - shown) + " more")
     }
     lines.push("Click to update")
+    var maxLen = 0
+    for (var p = 0; p < lines.length; p++) if (lines[p].length > maxLen) maxLen = lines[p].length
+    for (var q = 0; q < lines.length; q++) {
+      while (lines[q].length < maxLen) lines[q] += " "
+    }
     return lines.join("\n")
   }
 

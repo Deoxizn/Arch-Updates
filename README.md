@@ -8,16 +8,19 @@ Noctalia-style, instead of just a number.
 ## What it shows
 
 - Bar pill: package icon (nf-oct-package, U+F487) when up to date (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus `N` when N updates are pending.
-- Tooltip (hover): one section per category with pending items, listing
-  each vertically with its version change:
+- Tooltip (hover): all five sections, in order, listing each pending
+  item vertically with its version change:
   - Repo / AUR / Mise: `name old-version → new-version`.
   - Plugins / Themes: `name (N commits behind)` (a git checkout has no
     version to show).
-  - Categories with nothing pending are skipped. Each category lists at
-    most 20 rows, then `…and N more`, so a huge update list does not run
-    the tooltip off the bottom of the screen.
-  - The tooltip bubble is rendered by the bar, so its lines are centered,
-    not left-aligned. That is the bar's doing, not this widget's.
+  - Categories with nothing pending still show their header, e.g.
+    `AUR (0)`, with no rows under it.
+  - Each category lists at most 20 rows, then `…and N more`, so a huge
+    update list does not run the tooltip off the bottom of the screen.
+  - Left-aligned: the bar centers tooltip lines, so every line is padded
+    with spaces to the longest line's length, which makes the centered
+    lines share one left edge. That only lines up because the bar font
+    is monospace.
 - Left click: runs `omarchy update` (the terminal lists what it is about
   to install, same as before).
 - Middle click: forces an immediate recheck.
