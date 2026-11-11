@@ -18,9 +18,11 @@ Noctalia-style, instead of just a number.
   - Each category lists at most 20 rows, then `…and N more`, so a huge
     update list does not run the tooltip off the bottom of the screen.
   - Left-aligned: the bar centers tooltip lines, so every line is padded
-    with spaces to the longest line's length, which makes the centered
-    lines share one left edge. That only lines up because the bar font
-    is monospace.
+    to the longest line's length, which makes the centered lines share
+    one left edge. That only lines up because the bar font is monospace.
+    Padding is U+00A0 no-break space: plain spaces did not work (v1.7.2),
+    Qt trims trailing spaces when measuring centered lines, so every line
+    centered on its visible width and only the last line sat left.
 - Left click: runs `omarchy update` (the terminal lists what it is about
   to install, same as before).
 - Middle click: forces an immediate recheck.

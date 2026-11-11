@@ -41,10 +41,17 @@ import qs.Ui
 // Tooltip note: the bubble is rendered by the bar, not this widget, and
 // the bar centers every line (AlignHCenter, monospace bar font). A plain
 // \n-separated string is all the widget can hand it. buildTooltip works
-// around the centering by padding every line with spaces to the longest
-// line's length: equal-length lines center to the same left edge, which
-// reads as left-aligned. That only holds because the bar font is
-// monospace; in a proportional font the padding would not line up.
+// around the centering by padding every line to the longest line's
+// length: equal-length lines center to the same left edge, which reads
+// as left-aligned. That only holds because the bar font is monospace;
+// in a proportional font the padding would not line up.
+// Padding is U+00A0 no-break space, written as the "\u00A0" escape so it
+// stays visible in source. Plain spaces did NOT work (v1.7.2): Qt's text
+// layout trims trailing spaces when measuring centered lines, so every
+// line centered on its visible width and only the last line sat left.
+// A no-break space is not a breakable space, so it should survive the
+// width measurement. If it does not, the next thing to try is U+2800
+// braille blank, which is not whitespace at all.
 // v1.7.0 tried a click-to-open panel (Panel.qml) instead; the panel
 // window never mapped under the Nyxiri bar, and the hover list is what
 // was asked for, so the panel is gone as of v1.7.1.
@@ -111,8 +118,9 @@ BarWidget {
   // that have items (plugins/themes show "  name (N commits behind)"
   // instead). An old script that prints counts only leaves every list
   // empty, so that just shows the five headers with counts and no rows.
-  // Lines are padded with spaces to the longest line's length so the
-  // bar's centered tooltip reads as left-aligned (see header comment).
+  // Lines are padded with no-break spaces to the longest line's length
+  // so the bar's centered tooltip reads as left-aligned (see header
+  // comment for why plain spaces failed).
   // Stored in detailText, not computed in the binding, so it only
   // changes when a check lands.
   function buildTooltip() {
@@ -140,7 +148,7 @@ BarWidget {
     var maxLen = 0
     for (var p = 0; p < lines.length; p++) if (lines[p].length > maxLen) maxLen = lines[p].length
     for (var q = 0; q < lines.length; q++) {
-      while (lines[q].length < maxLen) lines[q] += " "
+      while (lines[q].length < maxLen) lines[q] += "\u00A0"
     }
     return lines.join("\n")
   }
