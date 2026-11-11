@@ -1,26 +1,30 @@
 # Arch Updates
 
-Icon badge for the Omarchy quattro bar, with a Noctalia-style panel
-listing every pending update. Package icon when clean (dimmed),
-package-variant icon plus `N` when N updates are pending.
+Icon badge for the Omarchy quattro bar. Package icon when clean (dimmed),
+package-variant icon plus `N` when N updates are pending. Hover the pill
+and the tooltip lists every pending update vertically, per category,
+Noctalia-style, instead of just a number.
 
 ## What it shows
 
 - Bar pill: package icon (nf-oct-package, U+F487) when up to date (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus `N` when N updates are pending.
-- Tooltip: the counts breakdown, e.g. `Repo: 8 · AUR: 4 · Mise: 2 · Plugins: 1 · Themes: 0 · Click for list, right-click to update`.
-- Panel (left click): one collapsible section per category, listing each
-  pending item vertically with its version change:
-  - Repo / AUR / Mise: `name` on the left, `old-version → new-version` on the right.
-  - Plugins / Themes: `name` on the left, `N commits behind` on the right
-    (a git checkout has no version to show).
-  - Click a section header to collapse/expand it. Long lists scroll;
-    the panel caps at about 430px tall.
-  - Header shows the total, the counts, and the checked time. Buttons:
-    `Update all`, `Refresh`, `Close`.
-- Left click: opens/closes the panel.
+- Tooltip (hover): one section per category with pending items, listing
+  each vertically with its version change:
+  - Repo / AUR / Mise: `name old-version → new-version`.
+  - Plugins / Themes: `name (N commits behind)` (a git checkout has no
+    version to show).
+  - Categories with nothing pending are skipped. Each category lists at
+    most 20 rows, then `…and N more`, so a huge update list does not run
+    the tooltip off the bottom of the screen.
+  - The tooltip bubble is rendered by the bar, so its lines are centered,
+    not left-aligned. That is the bar's doing, not this widget's.
+- Left click: runs `omarchy update` (the terminal lists what it is about
+  to install, same as before).
 - Middle click: forces an immediate recheck.
-- Right click: runs `omarchy update` straight away (the old left-click
-  behaviour, kept as an escape hatch).
+
+v1.7.0 tried a click-to-open panel (Panel.qml) for the list; the panel
+window never mapped under the Nyxiri bar, and the hover list is what was
+asked for, so the panel is gone as of v1.7.1.
 
 ## How it checks
 
@@ -46,7 +50,7 @@ theme<TAB><name><TAB><commits-behind>
 - Themes: git themes from `omarchy-theme-extras` whose upstream branch is
   behind after a fetch.
 
-Checking only counts; nothing here installs anything. `Update all` runs
+Checking only counts; nothing here installs anything. Left click runs
 `omarchy update` via `omarchy-launch-floating-terminal-with-presentation`,
 which covers system, AUR, and mise. Shell plugins and themes are counted
 here but updated separately (`omarchy plugin update`, theme git pull), so
@@ -69,7 +73,7 @@ If you installed the tarball manually first, remove
 so the clone lands clean. If the pill doesn't appear on the right,
 place it with `omarchy bar put devi.arch-updates --section right`.
 
-## Update from 1.6.x
+## Update from 1.6.x / 1.7.0
 
 ```bash
 omarchy plugin update devi.arch-updates --yes
@@ -77,9 +81,9 @@ omarchy restart shell
 ```
 
 A shell restart is required: a plugin update alone does not reload QML,
-so the old widget (no panel, left-click updates) stays in memory until
-restart. The script is run via `bash`, so do not `chmod +x` it, a
-mode-only change blocks the plugin update fast-forward.
+so the old widget stays in memory until restart. The script is run via
+`bash`, so do not `chmod +x` it, a mode-only change blocks the plugin
+update fast-forward.
 
 ## Settings
 
@@ -105,6 +109,6 @@ edit it to pin a specific terminal (e.g. `kitty omarchy update`).
   Font will show the clean icon and a box for the pending icon.
 - If your bar hides non-workspace widgets on a secondary monitor, this
   badge only appears on the monitors that show the full bar.
-- Panel plumbing follows the stock Omarchy weather/clock pattern
-  (`BarWidget.qml` + `Panel.qml`, Loader, `injectPanel`, open/close/toggle
-  forwarded). The panel is not a second manifest kind.
+- The tooltip is a plain newline-separated string, so it only works
+  because the bar renders tooltip text as multiline. If your bar shows
+  it as one long line, the bar's tooltip is the problem, not this widget.

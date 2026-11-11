@@ -3,10 +3,10 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 
-// Arch Updates: icon badge for pending updates, plus a Noctalia-style
-// panel listing every pending package vertically, per category, with
-// its old -> new version. No updates: nf-oct-package. Updates:
-// nf-md-package_variant + count.
+// Arch Updates: icon badge for pending updates. Hover the pill and the
+// tooltip lists every pending package vertically, per category, with
+// its old -> new version, Noctalia-style. No updates: nf-oct-package.
+// Updates: nf-md-package_variant + count.
 //
 // Why this failed on Caelestia and should work on Omarchy:
 // Caelestia draws bar icons with Material Symbols Rounded and bar text
@@ -35,16 +35,15 @@ import qs.Ui
 //   repo/aur/mise: "<cat>\t<name>\t<old>\t<new>"
 //   plugin/theme:  "<cat>\t<name>\t<commits-behind>"
 // This widget polls it on a timer, shows the icon plus total as a badge,
-// keeps the counts in the tooltip, and hands the detail lists to Panel.qml.
+// and builds the hover tooltip from the detail lists (buildTooltip).
+// Left click opens the updater, middle click forces a refresh.
 //
-// Clicks: left toggles the panel, middle forces a refresh, right runs
-// the updater straight away (the old left-click behaviour, kept as an
-// escape hatch). The panel's Update button runs the same command.
-//
-// Panel plumbing follows the stock Omarchy weather/clock pattern
-// (BarWidget + Panel.qml, Loader, injectPanel, open/close/toggle/opened
-// forwarded so the bar's popout routing and Nyxiri's findPanelWidget
-// both see it). The panel is NOT a second manifest kind.
+// Tooltip note: the bubble is rendered by the bar, not this widget, so
+// its lines are centered, not left-aligned. A plain \n-separated string
+// is all the widget can hand it, and that renders as a vertical list.
+// v1.7.0 tried a click-to-open panel (Panel.qml) instead; the panel
+// window never mapped under the Nyxiri bar, and the hover list is what
+// was asked for, so the panel is gone as of v1.7.1.
 //
 // Settings: edit intervalMinutes below (minutes between checks). Default 60.
 // If you rename this plugin, update the script path in checkProc.command.
@@ -53,13 +52,12 @@ BarWidget {
   id: root
   moduleName: "devi.arch-updates"
 
-  // Command run by the panel's Update button and by right-click. Uses
-  // Omarchy's presentation wrapper, same as the stock SystemUpdate widget:
-  // it shows the Omarchy logo, runs the update, then waits for a keypress
-  // on Done/Failed, so the terminal stays open after a clean run instead
-  // of closing the second the update exits. Plain xdg-terminal-exec closed
-  // instantly on success, which looked like a crash at the AUR stage
-  // (the last step).
+  // Command run on left click. Uses Omarchy's presentation wrapper, same
+  // as the stock SystemUpdate widget: it shows the Omarchy logo, runs the
+  // update, then waits for a keypress on Done/Failed, so the terminal
+  // stays open after a clean run instead of closing the second the
+  // update exits. Plain xdg-terminal-exec closed instantly on success,
+  // which looked like a crash at the AUR stage (the last step).
   // Note: omarchy update covers system, AUR and mise. Shell plugins and
   // themes are counted here but updated separately (omarchy plugin update,
   // theme git pull), so the badge can still show those after an update.
@@ -67,6 +65,10 @@ BarWidget {
 
   // Minutes between update checks. Change this number to suit.
   property int intervalMinutes: 60
+
+  // Rows shown per category in the tooltip before an "...and N more" line.
+  // A 50-package tooltip would run off the bottom of the screen.
+  property int tooltipRowsPerCategory: 20
 
   // Nerd Font icons, literal UTF-8 glyphs, see header comment.
   property string noUpdatesIcon: ""
@@ -80,6 +82,7 @@ BarWidget {
   property int themesCount: 0
   property bool checked: false
   property string checkedAt: ""
+  property string detailText: ""
 
   // Detail lists, one entry per pending item. Versioned entries are
   // { name, oldVersion, newVersion }; plugin/theme entries are
@@ -92,43 +95,56 @@ BarWidget {
 
   readonly property bool hasUpdates: root.totalCount > 0
 
-  // Panel lifecycle, forwarded so the bar routes popouts through the
-  // widget in its slot, not the nested panel item.
-  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
-  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
-
-  function open() { if (panelLoader.item) panelLoader.item.open() }
-  function close() { if (panelLoader.item) panelLoader.item.close() }
-  function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
-  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
-
-  function injectPanel() {
-    var target = panelLoader.item
-    if (!target) return
-    if ("bar" in target) target.bar = root.bar
-    if ("settings" in target) target.settings = root.settings
-    if ("anchorItem" in target) target.anchorItem = badge
-    if ("hostWidget" in target) target.hostWidget = root
-  }
-
-  function runUpdate() {
-    root.close()
-    if (root.bar) root.bar.run(root.updateCommand)
-  }
-
   implicitWidth: badge.implicitWidth
   implicitHeight: badge.implicitHeight
-
-  onBarChanged: injectPanel()
-  onSettingsChanged: injectPanel()
 
   function runCheck() {
     if (!checkProc.running) checkProc.running = true
   }
 
+  // Build the hover tooltip from the detail lists. One section per
+  // non-empty category, rows "  name old → new" (plugins/themes show
+  // "  name (N commits behind)" instead). An old script that prints
+  // counts only leaves every list empty, so that falls back to the
+  // counts-only line. Stored in detailText, not computed in the binding,
+  // so it only changes when a check lands.
+  function buildTooltip() {
+    if (!root.hasUpdates) return "No updates pending · Click to update"
+    var listsEmpty = root.repoList.length === 0 && root.aurList.length === 0
+      && root.miseList.length === 0 && root.pluginsList.length === 0
+      && root.themesList.length === 0
+    if (listsEmpty) {
+      return root.totalCount + " updates pending\n"
+        + "Repo: " + root.repoCount + " · AUR: " + root.aurCount
+        + " · Mise: " + root.miseCount + " · Plugins: " + root.pluginsCount
+        + " · Themes: " + root.themesCount + "\nClick to update"
+    }
+    var lines = [root.totalCount + " updates pending"]
+    var sections = [
+      { title: "Repo", count: root.repoCount, list: root.repoList, versioned: true },
+      { title: "AUR", count: root.aurCount, list: root.aurList, versioned: true },
+      { title: "Mise", count: root.miseCount, list: root.miseList, versioned: true },
+      { title: "Plugins", count: root.pluginsCount, list: root.pluginsList, versioned: false },
+      { title: "Themes", count: root.themesCount, list: root.themesList, versioned: false }
+    ]
+    for (var s = 0; s < sections.length; s++) {
+      var section = sections[s]
+      if (section.count <= 0) continue
+      lines.push(section.title + " (" + section.count + ")")
+      var shown = Math.min(section.list.length, root.tooltipRowsPerCategory)
+      for (var i = 0; i < shown; i++) {
+        var entry = section.list[i]
+        if (section.versioned) lines.push("  " + entry.name + " " + entry.oldVersion + " → " + entry.newVersion)
+        else lines.push("  " + entry.name + " (" + entry.behind + " commits behind)")
+      }
+      if (section.list.length > shown) lines.push("  …and " + (section.list.length - shown) + " more")
+    }
+    lines.push("Click to update")
+    return lines.join("\n")
+  }
+
   // Parse the script output: line 1 is the counts, the rest are
-  // tab-separated detail lines. An old script that prints counts only
-  // still parses (lists stay empty, the panel shows counts only).
+  // tab-separated detail lines.
   function parseCheck(text) {
     var lines = String(text || "").trim().split("\n")
     if (lines.length === 0 || lines[0] === "") return
@@ -175,6 +191,7 @@ BarWidget {
     root.themesList = themesList
     root.checkedAt = new Date().toLocaleTimeString()
     root.checked = true
+    root.detailText = root.buildTooltip()
   }
 
   Process {
@@ -197,17 +214,6 @@ BarWidget {
 
   Component.onCompleted: root.runCheck()
 
-  Loader {
-    id: panelLoader
-    active: true
-    visible: false
-    source: Qt.resolvedUrl("Panel.qml")
-    onLoaded: {
-      root.injectPanel()
-      Qt.callLater(root.injectPanel)
-    }
-  }
-
   WidgetButton {
     id: badge
     bar: root.bar
@@ -216,16 +222,12 @@ BarWidget {
     horizontalMargin: 8
     verticalPadding: 6
     fixedHeight: root.barSize
-    tooltipText: !root.checked ? "Checking for updates…"
-      : root.hasUpdates ? "Repo: " + root.repoCount + " · AUR: " + root.aurCount + " · Mise: " + root.miseCount + " · Plugins: " + root.pluginsCount + " · Themes: " + root.themesCount + " · Click for list, right-click to update"
-      : "No updates pending · Click for list"
+    tooltipText: !root.checked ? "Checking for updates…" : root.detailText
     onPressed: function(button) {
       if (button === Qt.LeftButton) {
-        root.toggle()
+        if (root.bar) root.bar.run(root.updateCommand)
       } else if (button === Qt.MiddleButton) {
         root.runCheck()
-      } else if (button === Qt.RightButton) {
-        root.runUpdate()
       }
     }
   }
