@@ -3,8 +3,10 @@ import Quickshell
 import Quickshell.Io
 import qs.Ui
 
-// Arch Updates: icon badge for pending updates.
-// No updates: nf-oct-package. Updates: nf-md-package_variant + count.
+// Arch Updates: icon badge for pending updates, plus a Noctalia-style
+// panel listing every pending package vertically, per category, with
+// its old -> new version. No updates: nf-oct-package. Updates:
+// nf-md-package_variant + count.
 //
 // Why this failed on Caelestia and should work on Omarchy:
 // Caelestia draws bar icons with Material Symbols Rounded and bar text
@@ -27,11 +29,22 @@ import qs.Ui
 //
 // How it works: check-updates.sh counts repo (checkupdates), AUR
 // (yay/paru -Qua), mise dev tools (mise outdated), git shell plugins
-// (tracked branch behind) and git themes (upstream behind), and prints
-// "<total> <repo> <aur> <mise> <plugins> <themes>". This widget polls it on
-// a timer, shows the icon plus total as a badge, and puts the breakdown
-// in the tooltip. Left click opens the updater, middle click forces a
-// refresh.
+// (tracked branch behind) and git themes (upstream behind), prints
+// "<total> <repo> <aur> <mise> <plugins> <themes>" on line 1, then one
+// tab-separated detail line per pending item:
+//   repo/aur/mise: "<cat>\t<name>\t<old>\t<new>"
+//   plugin/theme:  "<cat>\t<name>\t<commits-behind>"
+// This widget polls it on a timer, shows the icon plus total as a badge,
+// keeps the counts in the tooltip, and hands the detail lists to Panel.qml.
+//
+// Clicks: left toggles the panel, middle forces a refresh, right runs
+// the updater straight away (the old left-click behaviour, kept as an
+// escape hatch). The panel's Update button runs the same command.
+//
+// Panel plumbing follows the stock Omarchy weather/clock pattern
+// (BarWidget + Panel.qml, Loader, injectPanel, open/close/toggle/opened
+// forwarded so the bar's popout routing and Nyxiri's findPanelWidget
+// both see it). The panel is NOT a second manifest kind.
 //
 // Settings: edit intervalMinutes below (minutes between checks). Default 60.
 // If you rename this plugin, update the script path in checkProc.command.
@@ -40,12 +53,13 @@ BarWidget {
   id: root
   moduleName: "devi.arch-updates"
 
-  // Command run on left click. Uses Omarchy's presentation wrapper, same
-  // as the stock SystemUpdate widget: it shows the Omarchy logo, runs the
-  // update, then waits for a keypress on Done/Failed, so the terminal
-  // stays open after a clean run instead of closing the second the
-  // update exits. Plain xdg-terminal-exec closed instantly on success,
-  // which looked like a crash at the AUR stage (the last step).
+  // Command run by the panel's Update button and by right-click. Uses
+  // Omarchy's presentation wrapper, same as the stock SystemUpdate widget:
+  // it shows the Omarchy logo, runs the update, then waits for a keypress
+  // on Done/Failed, so the terminal stays open after a clean run instead
+  // of closing the second the update exits. Plain xdg-terminal-exec closed
+  // instantly on success, which looked like a crash at the AUR stage
+  // (the last step).
   // Note: omarchy update covers system, AUR and mise. Shell plugins and
   // themes are counted here but updated separately (omarchy plugin update,
   // theme git pull), so the badge can still show those after an update.
@@ -65,14 +79,102 @@ BarWidget {
   property int pluginsCount: 0
   property int themesCount: 0
   property bool checked: false
+  property string checkedAt: ""
+
+  // Detail lists, one entry per pending item. Versioned entries are
+  // { name, oldVersion, newVersion }; plugin/theme entries are
+  // { name, behind } (no version exists for a git checkout).
+  property var repoList: []
+  property var aurList: []
+  property var miseList: []
+  property var pluginsList: []
+  property var themesList: []
 
   readonly property bool hasUpdates: root.totalCount > 0
+
+  // Panel lifecycle, forwarded so the bar routes popouts through the
+  // widget in its slot, not the nested panel item.
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
+  readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
+
+  function open() { if (panelLoader.item) panelLoader.item.open() }
+  function close() { if (panelLoader.item) panelLoader.item.close() }
+  function toggle() { if (panelLoader.item) panelLoader.item.toggle() }
+  function closeForPopoutSwitch() { if (panelLoader.item) panelLoader.item.closeForPopoutSwitch() }
+
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("bar" in target) target.bar = root.bar
+    if ("settings" in target) target.settings = root.settings
+    if ("anchorItem" in target) target.anchorItem = badge
+    if ("hostWidget" in target) target.hostWidget = root
+  }
+
+  function runUpdate() {
+    root.close()
+    if (root.bar) root.bar.run(root.updateCommand)
+  }
 
   implicitWidth: badge.implicitWidth
   implicitHeight: badge.implicitHeight
 
+  onBarChanged: injectPanel()
+  onSettingsChanged: injectPanel()
+
   function runCheck() {
     if (!checkProc.running) checkProc.running = true
+  }
+
+  // Parse the script output: line 1 is the counts, the rest are
+  // tab-separated detail lines. An old script that prints counts only
+  // still parses (lists stay empty, the panel shows counts only).
+  function parseCheck(text) {
+    var lines = String(text || "").trim().split("\n")
+    if (lines.length === 0 || lines[0] === "") return
+    var parts = lines[0].trim().split(/\s+/)
+    if (parts.length !== 3 && parts.length !== 6) return
+    var total = parseInt(parts[0], 10)
+    var repo = parseInt(parts[1], 10)
+    var aur = parseInt(parts[2], 10)
+    var mise = parts.length === 6 ? parseInt(parts[3], 10) : 0
+    var plugins = parts.length === 6 ? parseInt(parts[4], 10) : 0
+    var themes = parts.length === 6 ? parseInt(parts[5], 10) : 0
+    if (isNaN(total) || isNaN(repo) || isNaN(aur) || isNaN(mise) || isNaN(plugins) || isNaN(themes)) return
+    var repoList = []
+    var aurList = []
+    var miseList = []
+    var pluginsList = []
+    var themesList = []
+    for (var i = 1; i < lines.length; i++) {
+      var fields = lines[i].split("\t")
+      if (fields.length < 3) continue
+      var cat = fields[0]
+      if ((cat === "repo" || cat === "aur" || cat === "mise") && fields.length >= 4) {
+        var entry = { name: fields[1], oldVersion: fields[2], newVersion: fields[3] }
+        if (cat === "repo") repoList.push(entry)
+        else if (cat === "aur") aurList.push(entry)
+        else miseList.push(entry)
+      } else if ((cat === "plugin" || cat === "theme") && fields.length >= 3) {
+        var behind = parseInt(fields[2], 10)
+        var gitEntry = { name: fields[1], behind: isNaN(behind) ? 0 : behind }
+        if (cat === "plugin") pluginsList.push(gitEntry)
+        else themesList.push(gitEntry)
+      }
+    }
+    root.totalCount = total
+    root.repoCount = repo
+    root.aurCount = aur
+    root.miseCount = mise
+    root.pluginsCount = plugins
+    root.themesCount = themes
+    root.repoList = repoList
+    root.aurList = aurList
+    root.miseList = miseList
+    root.pluginsList = pluginsList
+    root.themesList = themesList
+    root.checkedAt = new Date().toLocaleTimeString()
+    root.checked = true
   }
 
   Process {
@@ -81,24 +183,7 @@ BarWidget {
     // executable bit on a plugin update (git does not always preserve it).
     command: ["bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/devi.arch-updates/check-updates.sh"]
     stdout: StdioCollector {
-      onStreamFinished: {
-        var parts = String(text || "").trim().split(/\s+/)
-        if (parts.length !== 3 && parts.length !== 6) return
-        var total = parseInt(parts[0], 10)
-        var repo = parseInt(parts[1], 10)
-        var aur = parseInt(parts[2], 10)
-        var mise = parts.length === 6 ? parseInt(parts[3], 10) : 0
-        var plugins = parts.length === 6 ? parseInt(parts[4], 10) : 0
-        var themes = parts.length === 6 ? parseInt(parts[5], 10) : 0
-        if (isNaN(total) || isNaN(repo) || isNaN(aur) || isNaN(mise) || isNaN(plugins) || isNaN(themes)) return
-        root.totalCount = total
-        root.repoCount = repo
-        root.aurCount = aur
-        root.miseCount = mise
-        root.pluginsCount = plugins
-        root.themesCount = themes
-        root.checked = true
-      }
+      onStreamFinished: root.parseCheck(text)
     }
   }
 
@@ -112,6 +197,17 @@ BarWidget {
 
   Component.onCompleted: root.runCheck()
 
+  Loader {
+    id: panelLoader
+    active: true
+    visible: false
+    source: Qt.resolvedUrl("Panel.qml")
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
+  }
+
   WidgetButton {
     id: badge
     bar: root.bar
@@ -121,13 +217,15 @@ BarWidget {
     verticalPadding: 6
     fixedHeight: root.barSize
     tooltipText: !root.checked ? "Checking for updates…"
-      : root.hasUpdates ? "Repo: " + root.repoCount + " · AUR: " + root.aurCount + " · Mise: " + root.miseCount + " · Plugins: " + root.pluginsCount + " · Themes: " + root.themesCount + " · Click to update"
-      : "No updates pending · Click to update"
+      : root.hasUpdates ? "Repo: " + root.repoCount + " · AUR: " + root.aurCount + " · Mise: " + root.miseCount + " · Plugins: " + root.pluginsCount + " · Themes: " + root.themesCount + " · Click for list, right-click to update"
+      : "No updates pending · Click for list"
     onPressed: function(button) {
       if (button === Qt.LeftButton) {
-        if (root.bar) root.bar.run(root.updateCommand)
+        root.toggle()
       } else if (button === Qt.MiddleButton) {
         root.runCheck()
+      } else if (button === Qt.RightButton) {
+        root.runUpdate()
       }
     }
   }

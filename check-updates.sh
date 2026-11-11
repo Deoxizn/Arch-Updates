@@ -1,6 +1,18 @@
 #!/bin/bash
-# Count pending updates for the devi.arch-updates bar widget.
-# Prints one line: "<total> <repo> <aur> <mise> <plugins> <themes>"
+# Count pending updates for the devi.arch-updates bar widget, and list them.
+#
+# Output, line 1 (unchanged from 1.6.x, so an old widget still works):
+#   "<total> <repo> <aur> <mise> <plugins> <themes>"
+# Following lines, one per pending item, tab-separated (printf \t, never a
+# literal tab in this file, so the format survives editors and git):
+#   repo<TAB><name><TAB><old-version><TAB><new-version>
+#   aur<TAB><name><TAB><old-version><TAB><new-version>
+#   mise<TAB><name><TAB><current><TAB><latest>
+#   plugin<TAB><name><TAB><commits-behind>
+#   theme<TAB><name><TAB><commits-behind>
+# Package/version fields never contain tabs or newlines, so the widget can
+# split on them safely. No line is emitted for a category with zero items.
+#
 # Check-only: nothing here installs anything. Installs go through omarchy update
 # (system, AUR, mise) and, separately, omarchy plugin update / theme git pull
 # for shell plugins and themes.
@@ -10,17 +22,56 @@ aur=0
 mise=0
 plugins=0
 themes=0
+details=""
 
-# Repo (pacman-contrib)
+# Append one detail line. $1 is a printf format (with \t escapes), the rest
+# are the fields, so no literal tabs are needed anywhere in this script.
+add_detail() {
+  local fmt="$1"; shift
+  details+=$(printf "$fmt" "$@")$'\n'
+}
+
+# Repo (pacman-contrib). checkupdates prints "name old-version -> new-version"
+# per line; keep the raw output instead of only counting it.
+repo_out=""
 if command -v checkupdates >/dev/null 2>&1; then
-  repo=$(checkupdates 2>/dev/null | wc -l)
+  repo_out=$(checkupdates 2>/dev/null)
+fi
+if [ -n "$repo_out" ]; then
+  repo=$(printf '%s\n' "$repo_out" | wc -l)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # shellcheck disable=SC2086: intentional word-splitting on the 4 fields
+    set -- $line
+    name=${1##*/}
+    [ -n "$name" ] && [ -n "$2" ] && [ -n "$4" ] || continue
+    add_detail 'repo\t%s\t%s\t%s' "$name" "$2" "$4"
+  done <<EOF
+$repo_out
+EOF
 fi
 
-# AUR (yay, falls back to paru)
+# AUR (yay, falls back to paru). -Qua prints the same
+# "name old-version -> new-version" shape, sometimes with an "aur/" prefix
+# on the name, which is stripped above.
+aur_out=""
 if command -v yay >/dev/null 2>&1; then
-  aur=$(yay -Qua 2>/dev/null | wc -l)
+  aur_out=$(yay -Qua 2>/dev/null)
 elif command -v paru >/dev/null 2>&1; then
-  aur=$(paru -Qua 2>/dev/null | wc -l)
+  aur_out=$(paru -Qua 2>/dev/null)
+fi
+if [ -n "$aur_out" ]; then
+  aur=$(printf '%s\n' "$aur_out" | wc -l)
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    # shellcheck disable=SC2086: intentional word-splitting on the 4 fields
+    set -- $line
+    name=${1##*/}
+    [ -n "$name" ] && [ -n "$2" ] && [ -n "$4" ] || continue
+    add_detail 'aur\t%s\t%s\t%s' "$name" "$2" "$4"
+  done <<EOF
+$aur_out
+EOF
 fi
 
 # Mise dev tools. MISE_MINIMUM_RELEASE_AGE=0 so the count matches what an
@@ -28,9 +79,17 @@ fi
 # back to counting plain output lines after the header when jq is missing.
 if command -v mise >/dev/null 2>&1; then
   if command -v jq >/dev/null 2>&1; then
-    mise=$(MISE_MINIMUM_RELEASE_AGE=0 timeout 120 mise outdated --json 2>/dev/null | jq '[to_entries[] | select(.value.current != .value.latest and .value.latest != "")] | length' 2>/dev/null)
+    mise_out=$(MISE_MINIMUM_RELEASE_AGE=0 timeout 120 mise outdated --json 2>/dev/null | jq -r 'to_entries[] | select(.value.current != .value.latest and .value.latest != "") | ["mise", .key, (.value.current // ""), (.value.latest // "")] | @tsv' 2>/dev/null)
+    if [ -n "$mise_out" ]; then
+      mise=$(printf '%s\n' "$mise_out" | wc -l)
+      details+="$mise_out"$'\n'
+    fi
   else
-    mise=$(MISE_MINIMUM_RELEASE_AGE=0 timeout 120 mise outdated 2>/dev/null | awk 'NR>1 && NF' | wc -l)
+    mise_out=$(MISE_MINIMUM_RELEASE_AGE=0 timeout 120 mise outdated 2>/dev/null | awk 'NR>1 && NF>=3 {print "mise\t" $1 "\t" $2 "\t" $3}')
+    if [ -n "$mise_out" ]; then
+      mise=$(printf '%s\n' "$mise_out" | wc -l)
+      details+="$mise_out"$'\n'
+    fi
   fi
 fi
 
@@ -38,7 +97,9 @@ fi
 # A plugin counts when its tracked branch is behind after a fetch (same
 # approach as techspawn.updates). Fetches run in parallel so a full plugin
 # list stays fast. Plain folders, symlinks, and checkouts without a remote
-# are not counted.
+# are not counted. Each behind plugin writes one detail line
+# ("plugin<TAB><name><TAB><commits-behind>") to the temp dir, so the
+# count is the file count and the names survive.
 plugins_dir="$HOME/.config/omarchy/plugins"
 if [ -d "$plugins_dir" ]; then
   plug_tmp=$(mktemp -d)
@@ -67,7 +128,7 @@ if [ -d "$plugins_dir" ]; then
           behind=$(git -C "$d" rev-list --count "HEAD..$target" 2>/dev/null || echo 0)
           behind=$(echo "$behind" | tr -d ' ')
           if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
-            : > "$plug_tmp/$(basename "$d")"
+            printf 'plugin\t%s\t%s\n' "$(basename "$d")" "$behind" > "$plug_tmp/$(basename "$d")"
           fi
         fi
       fi
@@ -75,6 +136,10 @@ if [ -d "$plugins_dir" ]; then
   done
   wait
   plugins=$(find "$plug_tmp" -type f 2>/dev/null | wc -l)
+  for f in "$plug_tmp"/*; do
+    [ -f "$f" ] || continue
+    details+=$(cat "$f")$'\n'
+  done
   rm -rf "$plug_tmp"
 fi
 
@@ -89,6 +154,7 @@ if command -v omarchy-theme-extras >/dev/null 2>&1; then
       behind=$(echo "$behind" | tr -d ' ')
       if [ -n "$behind" ] && [ "$behind" -gt 0 ] 2>/dev/null; then
         themes=$((themes + 1))
+        add_detail 'theme\t%s\t%s' "$(basename "$t")" "$behind"
       fi
     fi
   done < <(omarchy-theme-extras 2>/dev/null)
@@ -110,3 +176,4 @@ for v in repo aur mise plugins themes; do
 done
 
 echo "$((repo + aur + mise + plugins + themes)) $repo $aur $mise $plugins $themes"
+printf '%s' "$details"
