@@ -1,5 +1,5 @@
 #!/bin/bash
-# Count pending updates for the devi.arch-updates bar widget, and list them.
+# Count pending updates for the pizza.dirty.arch-updates bar widget, and list them.
 #
 # Output, line 1 (unchanged from 1.6.x, so an old widget still works):
 #   "<total> <repo> <aur> <mise> <plugins> <themes>"

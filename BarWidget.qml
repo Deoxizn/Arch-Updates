@@ -61,7 +61,7 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "devi.arch-updates"
+  moduleName: "pizza.dirty.arch-updates"
 
   // Command run on left click. Uses Omarchy's presentation wrapper, same
   // as the stock SystemUpdate widget: it shows the Omarchy logo, runs the
@@ -208,7 +208,7 @@ BarWidget {
     id: checkProc
     // Run via bash so the check works even if the script loses its
     // executable bit on a plugin update (git does not always preserve it).
-    command: ["bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/devi.arch-updates/check-updates.sh"]
+    command: ["bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/check-updates.sh"]
     stdout: StdioCollector {
       onStreamFinished: root.parseCheck(text)
     }

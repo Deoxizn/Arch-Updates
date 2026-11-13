@@ -74,14 +74,14 @@ omarchy restart shell
 ```
 
 If you installed the tarball manually first, remove
-`~/.config/omarchy/plugins/devi.arch-updates/` before the `plugin add`
+`~/.config/omarchy/plugins/pizza.dirty.arch-updates/` before the `plugin add`
 so the clone lands clean. If the pill doesn't appear on the right,
-place it with `omarchy bar put devi.arch-updates --section right`.
+place it with `omarchy bar put pizza.dirty.arch-updates --section right`.
 
 ## Update from 1.6.x / 1.7.0
 
 ```bash
-omarchy plugin update devi.arch-updates --yes
+omarchy plugin update pizza.dirty.arch-updates --yes
 omarchy restart shell
 ```
 
