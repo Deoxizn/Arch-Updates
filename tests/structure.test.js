@@ -129,7 +129,7 @@ test("the standalone settings window mirrors the System tab", () => {
   const settings = read("SystemSettings.qml")
   assert.match(settings, /PanelWindow \{/)
   assert.match(settings, /WlrLayershell\.namespace: "pizza\.dirty\.arch-updates-settings"/)
-  assert.match(settings, /SectionLabel \{ text: "SYSTEM" \}/)
+  assert.match(settings, /SectionLabel \{ text: "SYSTEM UPDATER" \}/)
   assert.match(settings, /label: "Refresh interval"/)
   assert.match(settings, /popup\.sysSetting\("refreshIntervalSec", 1800\)/)
   assert.match(settings, /label: "Automatic checks"/)

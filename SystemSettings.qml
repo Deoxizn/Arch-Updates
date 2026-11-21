@@ -183,7 +183,7 @@ PanelWindow {
           width: scrollArea.width
           spacing: Style.space(16)
 
-          SectionLabel { text: "SYSTEM" }
+          SectionLabel { text: "SYSTEM UPDATER" }
 
           SubLabel { text: "Refresh" }
 
