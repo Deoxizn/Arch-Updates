@@ -1,17 +1,47 @@
 # Arch Updates
 
-Icon badge for the Omarchy quattro bar. Package icon when clean (dimmed),
-package-variant icon plus `N` when N updates are pending. Hover the pill
-and the tooltip lists every pending update vertically, per category,
-Noctalia-style, instead of just a number.
+System-update indicator for the Omarchy bar, in the
+[dizziee.system-updates](https://github.com/JJDizz1L/dizziee.system-updates)
+model. Package icon when clean (dimmed), package-variant icon plus `N`
+when N updates are pending. Hover the pill and the tooltip lists every
+pending update vertically, per category, Noctalia-style, instead of just
+a number. Left click opens a panel listing the pending packages per
+source, with an update button each.
+
+## The combined Omarchy + Arch section
+
+There is one section for Omarchy and Arch together, and one update
+action for it: `omarchy update`, the full managed pipeline (transcript,
+snapshot, keyrings, migrations, post-update hooks). A bare arch update
+is never an update action here, not even with
+`OMARCHY_ALLOW_DIRECT_PACMAN=1`: it bypasses Omarchy's guard and skips
+the managed pipeline, and as the dizziee README says, running just an
+arch update is useless and can be harmful. The section's count is the
+Arch repo count, and it notes when an Omarchy update itself is available
+(the omarchy package in the repo list, or a dev checkout behind its
+upstream).
+
+The other sources keep their own safe updater:
+
+- AUR: `yay -Sua` / `paru -Sua`
+- Flatpak: `flatpak update`
+- Plugins & Themes: `omarchy plugin update --yes; omarchy theme update`
+- mise: `MISE_MINIMUM_RELEASE_AGE=0 mise up`
+
+Each update opens a terminal and runs the command, then waits for a
+keypress, so the terminal stays open after a clean run instead of
+closing the second the update exits. After an update starts, the widget
+rescans on a fast poll until the numbers settle.
 
 ## What it shows
 
-- Bar pill: package icon (nf-oct-package, U+F487) when up to date (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus `N` when N updates are pending.
+- Bar pill: package icon (nf-oct-package, U+F487) when up to date
+  (dimmed), package-variant icon (nf-md-package_variant, U+F03D6) plus
+  `N` when N updates are pending.
 - Tooltip (hover): all five sections, in order, listing each pending
   item vertically with its version change:
-  - Repo / AUR / Mise: `name old-version → new-version`.
-  - Plugins / Themes: `name (N commits behind)` (a git checkout has no
+  - Omarchy + Arch / AUR / Flatpak / mise: `name old-version → new-version`.
+  - Plugins & Themes: `name (N commits behind)` (a git checkout has no
     version to show).
   - Categories with nothing pending still show their header, e.g.
     `AUR (0)`, with no rows under it.
@@ -23,47 +53,51 @@ Noctalia-style, instead of just a number.
     Padding is U+00A0 no-break space: plain spaces did not work (v1.7.2),
     Qt trims trailing spaces when measuring centered lines, so every line
     centered on its visible width and only the last line sat left.
-- Left click: runs `omarchy update` (the terminal lists what it is about
-  to install, same as before).
-- Middle click: forces an immediate recheck.
+- Panel (left click): one card per installed source, click a card to
+  expand it and list the pending packages with their version change
+  (or commits behind for plugins/themes). Each card has its own Update
+  button. `R` refreshes, `S` opens settings, Escape closes.
+- Left click: opens the panel. Middle click: forces an immediate
+  recheck. Right click: opens the standalone settings window.
 
 v1.7.0 tried a click-to-open panel (Panel.qml) for the list; the panel
 window never mapped under the Nyxiri bar, and the hover list is what was
-asked for, so the panel is gone as of v1.7.1.
+asked for, so the panel is gone as of v1.7.1. 2.0.0 brings the panel back
+on the clock widget's proven pattern (a Panel.qml loaded through a
+Loader, with a KeyboardPanel anchored to the badge).
 
 ## How it checks
 
-`check-updates.sh` counts pending updates and prints
-`<total> <repo> <aur> <mise> <plugins> <themes>` on line 1, then one
-tab-separated detail line per pending item:
+`scripts/check_updates.py` (Python stdlib only) counts pending updates
+and prints one JSON document:
 
-```
-repo<TAB><name><TAB><old-version><TAB><new-version>
-aur<TAB><name><TAB><old-version><TAB><new-version>
-mise<TAB><name><TAB><current><TAB><latest>
-plugin<TAB><name><TAB><commits-behind>
-theme<TAB><name><TAB><commits-behind>
+```json
+{"repos": [{"id", "name", "count", "installed", "packages", "..."}], "total": N}
 ```
 
 - Repo: `checkupdates` (from pacman-contrib).
 - AUR: `yay -Qua` (falls back to `paru -Qua`).
+- Flatpak: `flatpak remote-ls --updates`.
 - Mise: `mise outdated --json` (with `MISE_MINIMUM_RELEASE_AGE=0`, so the
-  count matches what an update installs; falls back to plain `mise outdated`
-  when `jq` is not installed).
-- Shell plugins: git checkouts in `~/.config/omarchy/plugins` whose tracked
-  branch is behind after a fetch (same approach as techspawn.updates).
+  count matches what an update installs; falls back to plain
+  `mise outdated` when the override is rejected).
+- Shell plugins: git checkouts in `~/.config/omarchy/plugins` whose
+  tracked branch is behind after a fetch (same approach as
+  techspawn.updates).
 - Themes: git themes from `omarchy-theme-extras` whose upstream branch is
   behind after a fetch.
+- Omarchy: the omarchy/omarchy-dev package in the repo list, or a dev
+  checkout (OMARCHY_PATH) behind its upstream.
 
-Checking only counts; nothing here installs anything. Left click runs
-`omarchy update` via `omarchy-launch-floating-terminal-with-presentation`,
-which covers system, AUR, and mise. Shell plugins and themes are counted
-here but updated separately (`omarchy plugin update`, theme git pull), so
-the badge can still show those after an `omarchy update` until they are
-updated.
+Checking only counts; nothing here installs anything. The widget caches
+the last scan to `~/.cache/omarchy/pizza.dirty.arch-updates.json` so the
+bar renders it instantly at shell start with zero spawns.
 
 Mise, plugin, and theme counting was inspired by
-[techspawn.updates](https://github.com/RajShimpi/omarchy-updates) (MIT).
+[techspawn.updates](https://github.com/RajShimpi/omarchy-updates) (MIT),
+and the panel model by
+[dizziee.system-updates](https://github.com/JJDizz1L/dizziee.system-updates)
+(MIT).
 
 ## Install
 
@@ -78,7 +112,7 @@ If you installed the tarball manually first, remove
 so the clone lands clean. If the pill doesn't appear on the right,
 place it with `omarchy bar put pizza.dirty.arch-updates --section right`.
 
-## Update from 1.6.x / 1.7.0
+## Update from 1.x
 
 ```bash
 omarchy plugin update pizza.dirty.arch-updates --yes
@@ -86,19 +120,31 @@ omarchy restart shell
 ```
 
 A shell restart is required: a plugin update alone does not reload QML,
-so the old widget stays in memory until restart. The script is run via
-`bash`, so do not `chmod +x` it, a mode-only change blocks the plugin
-update fast-forward.
+so the old widget stays in memory until restart. The scanner is run via
+`python3`, so there is no executable-bit problem on a plugin update.
+
+2.0.0 replaces `check-updates.sh` with `scripts/check_updates.py` and
+renames the check interval setting from `intervalMinutes` (minutes,
+default 60) to `refreshIntervalSec` (seconds, default 1800). An old
+`intervalMinutes` value is ignored; set the interval in the System tab
+or the standalone settings window.
 
 ## Settings
 
-Check interval: edit `intervalMinutes` at the top of `BarWidget.qml`
-(minutes between checks, default 60), then restart the shell if it does
-not pick it up live.
+All settings live in the widget's bar layout entry and are edited from
+the Nyxiri bar's settings window (System tab) or the standalone settings
+window (right-click the badge). Both write the same entry, so they stay
+in sync.
 
-Update command: `updateCommand` at the top of `BarWidget.qml` runs
-`omarchy update` via Omarchy's floating-terminal presentation wrapper;
-edit it to pin a specific terminal (e.g. `kitty omarchy update`).
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `refreshIntervalSec` | integer (300–7200) | 1800 | How often to check for updates (seconds) |
+| `alwaysShow` | boolean | true | Keep icon visible even when no updates are available |
+| `autoRefresh` | boolean | true | Check on the interval and once after startup. Off means checks run only when the panel is opened. |
+| `checkAur` | boolean | true | Check AUR updates |
+| `checkFlatpak` | boolean | true | Check Flatpak updates |
+| `checkMise` | boolean | true | Check mise dev tools |
+| `checkPlugins` | boolean | true | Check git shell plugins and themes |
 
 ## Notes
 
@@ -106,7 +152,7 @@ edit it to pin a specific terminal (e.g. `kitty omarchy update`).
   databases, the AUR query takes a moment, and plugin/theme checks fetch
   each git remote.
 - If you renamed the plugin directory, update the script path in
-  `BarWidget.qml` (`checkProc.command`) to match.
+  `BarWidget.qml` (`scriptPath`) to match.
 - Designed for a horizontal (top/bottom) bar. The pill follows the bar
   font like any other widget, and the icons are Nerd Font glyphs, so the
   bar monospace font needs to be a Nerd Fonts v3 font. The package-variant

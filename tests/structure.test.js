@@ -1,0 +1,165 @@
+"use strict"
+
+const test = require("node:test")
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+
+const root = path.join(__dirname, "..")
+const read = (name) => fs.readFileSync(path.join(root, name), "utf8")
+const exists = (name) => fs.existsSync(path.join(root, name))
+
+test("manifest is version 2.0.0 and declares the system settings", () => {
+  const manifest = JSON.parse(read("manifest.json"))
+  assert.equal(manifest.id, "pizza.dirty.arch-updates")
+  assert.equal(manifest.version, "2.0.0")
+  assert.equal(manifest.entryPoints.barWidget, "BarWidget.qml")
+  const defaults = manifest.barWidget.defaults
+  assert.equal(defaults.refreshIntervalSec, 1800)
+  assert.equal(defaults.alwaysShow, true)
+  assert.equal(defaults.autoRefresh, true)
+  assert.equal(defaults.checkAur, true)
+  assert.equal(defaults.checkFlatpak, true)
+  assert.equal(defaults.checkMise, true)
+  assert.equal(defaults.checkPlugins, true)
+  const keys = manifest.barWidget.schema.map((entry) => entry.key)
+  for (const key of ["refreshIntervalSec", "alwaysShow", "autoRefresh", "checkAur", "checkFlatpak", "checkMise", "checkPlugins"]) {
+    assert.ok(keys.includes(key), `schema missing ${key}`)
+  }
+})
+
+test("the old bash scanner is gone; the Python scanner is the only checker", () => {
+  assert.ok(!exists("check-updates.sh"), "check-updates.sh must be deleted")
+  assert.ok(exists("scripts/check_updates.py"), "scripts/check_updates.py missing")
+  assert.ok(exists("Model.js"), "Model.js missing")
+  assert.ok(exists("Panel.qml"), "Panel.qml missing")
+  assert.ok(exists("SystemSettings.qml"), "SystemSettings.qml missing")
+})
+
+test("the combined Omarchy + Arch section updates with omarchy update, never bare pacman", () => {
+  const model = read("Model.js")
+  // The system repo's only update command is the managed pipeline.
+  assert.match(model, /if \(id === "system"\) return "omarchy update; echo; read/)
+  // No bare pacman anywhere in the command builder: not as a command, and
+  // not even smuggled past the guard with OMARCHY_ALLOW_DIRECT_PACMAN.
+  assert.doesNotMatch(model, /pacman -Syu/)
+  assert.doesNotMatch(model, /OMARCHY_ALLOW_DIRECT_PACMAN/)
+  // The other sources keep their own safe updater.
+  assert.match(model, /if \(id === "aur"\)/)
+  assert.match(model, /-Sua; echo; read/)
+  assert.match(model, /if \(id === "flatpak"\) return "flatpak update; echo; read/)
+  assert.match(model, /if \(id === "plugins"\) return "omarchy plugin update --yes; omarchy theme update; echo; read/)
+  assert.match(model, /if \(id === "mise"\) return "MISE_MINIMUM_RELEASE_AGE=0 mise up; echo; read/)
+  // The AUR helper is a fixed enum: an unknown helper yields no command.
+  assert.match(model, /AUR_HELPERS/)
+  assert.match(model, /if \(AUR_HELPERS\.indexOf\(helper\) === -1\) return ""/)
+  // Only the five known repo ids parse.
+  assert.match(model, /"system": true/)
+  assert.match(model, /"aur": true/)
+  assert.match(model, /"flatpak": true/)
+  assert.match(model, /"plugins": true/)
+  assert.match(model, /"mise": true/)
+})
+
+test("the widget scans with python3, shows the badge, and opens the panel", () => {
+  const widget = read("BarWidget.qml")
+  assert.match(widget, /\["python3", root\.scriptPath\]/)
+  assert.match(widget, /scripts\/check_updates\.py/)
+  // Nerd Font package icons, as QML escapes (ASCII, so they survive
+  // transport): clean U+F487, pending U+F03D6.
+  assert.match(widget, /property string noUpdatesIcon: "\\uf487"/)
+  assert.match(widget, /property string updatesIcon: "\\udb80\\udfd6"/)
+  // The badge shows the count when updates are waiting.
+  assert.match(widget, /text: root\.hasUpdates \? root\.updatesIcon \+ " " \+ root\.totalCount : root\.noUpdatesIcon/)
+  // Left click opens the panel, middle refreshes, right opens settings.
+  assert.match(widget, /root\.togglePanel\(\)/)
+  assert.match(widget, /Qt\.RightButton\) \{ root\.toggleSettings\(\); return \}/)
+  assert.match(widget, /Qt\.MiddleButton\) \{ root\.runCheck\(\); return \}/)
+  // The panel is loaded through a Loader, on the clock's pattern.
+  assert.match(widget, /source: Qt\.resolvedUrl\("Panel\.qml"\)/)
+  assert.match(widget, /target\.anchorItem = badge/)
+  assert.match(widget, /target\.hostWidget = root/)
+  // Settings come from the layout entry and are written through the same
+  // updateEntryInline the bar's System tab uses.
+  assert.match(widget, /function setSystem\(patch\)/)
+  assert.match(widget, /root\.bar\.shell\.updateEntryInline\(root\.moduleName, entry\)/)
+  assert.match(widget, /refreshIntervalSec/)
+  assert.match(widget, /checkAur/)
+  assert.match(widget, /checkFlatpak/)
+  assert.match(widget, /checkMise/)
+  assert.match(widget, /checkPlugins/)
+  // The scanner gets the per-source toggles as --no-* flags.
+  assert.match(widget, /args\.push\("--no-aur"\)/)
+  assert.match(widget, /args\.push\("--no-flatpak"\)/)
+  assert.match(widget, /args\.push\("--no-mise"\)/)
+  assert.match(widget, /args\.push\("--no-plugins"\)/)
+  // Updates open a terminal (dizziee's approach) and rescan after.
+  assert.match(widget, /omarchy-launch-terminal bash -c/)
+  assert.match(widget, /Model\.updateCommandFor\(repo\)/)
+  assert.match(widget, /fastPollTimer/)
+  // The standalone settings window, one per bar surface.
+  assert.match(widget, /SystemSettings \{/)
+  assert.match(widget, /visible: root\.settingsOpen/)
+})
+
+test("the panel lists pending packages per source with an update button each", () => {
+  const panel = read("Panel.qml")
+  assert.match(panel, /KeyboardPanel \{/)
+  assert.match(panel, /anchorItem: root\.anchorItem/)
+  assert.match(panel, /owner: root\.barIdentity/)
+  assert.match(panel, /model: root\.opened \? root\.installedRepos : \[\]/)
+  assert.match(panel, /modelData\.name/)
+  // Versioned entries show old → new; git entries show commits behind.
+  assert.match(panel, /modelData\.from \+ " → "/)
+  assert.match(panel, /commits behind/)
+  // The combined section notes an available Omarchy update.
+  assert.match(panel, /Omarchy update available/)
+  // Each card's Update button calls the widget's updater and closes.
+  assert.match(panel, /text: "Update"/)
+  assert.match(panel, /onClicked: root\.updateRepo\(modelData\.id\)/)
+  // Rows expand to reveal their packages.
+  assert.match(panel, /function toggleRepo\(id\)/)
+  assert.match(panel, /visible: repoCard\.expanded/)
+  // Header has Refresh and a way into settings.
+  assert.match(panel, /text: "Refresh"/)
+  assert.match(panel, /text: "Settings"/)
+})
+
+test("the standalone settings window mirrors the System tab", () => {
+  const settings = read("SystemSettings.qml")
+  assert.match(settings, /PanelWindow \{/)
+  assert.match(settings, /WlrLayershell\.namespace: "pizza\.dirty\.arch-updates-settings"/)
+  assert.match(settings, /SectionLabel \{ text: "SYSTEM" \}/)
+  assert.match(settings, /label: "Refresh interval"/)
+  assert.match(settings, /popup\.sysSetting\("refreshIntervalSec", 1800\)/)
+  assert.match(settings, /label: "Automatic checks"/)
+  assert.match(settings, /label: "Always show"/)
+  assert.match(settings, /label: "AUR"/)
+  assert.match(settings, /label: "Flatpak"/)
+  assert.match(settings, /label: "mise"/)
+  assert.match(settings, /label: "Plugins & themes"/)
+  // Every control writes through the host widget's setSystem, the same
+  // updateEntryInline the bar's System tab uses.
+  assert.match(settings, /popup\.setSystem\(\{/)
+  assert.match(settings, /hostWidget\.setSystem\(patch\)/)
+  // Escape closes it.
+  assert.match(settings, /sequence: "Escape"/)
+})
+
+test("the scanner emits the combined system repo and per-source flags", () => {
+  const scanner = read("scripts/check_updates.py")
+  assert.match(scanner, /"system"/)
+  assert.match(scanner, /"Omarchy \+ Arch"/)
+  assert.match(scanner, /omarchyPending/)
+  assert.match(scanner, /OMARCHY_PACKAGES/)
+  assert.match(scanner, /--no-aur/)
+  assert.match(scanner, /--no-flatpak/)
+  assert.match(scanner, /--no-mise/)
+  assert.match(scanner, /--no-plugins/)
+  // The scanner is check-only: it never installs anything, and it never
+  // runs a bare pacman upgrade.
+  assert.doesNotMatch(scanner, /pacman -Syu/)
+  assert.doesNotMatch(scanner, /OMARCHY_ALLOW_DIRECT_PACMAN/)
+  assert.match(scanner, /"repos": repos/)
+  assert.match(scanner, /"total": total/)
+})

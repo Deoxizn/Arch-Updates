@@ -2,41 +2,53 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Ui
+import "Model.js" as Model
 
-// Arch Updates: icon badge for pending updates. Hover the pill and the
-// tooltip lists every pending package vertically, per category, with
-// its old -> new version, Noctalia-style. No updates: nf-oct-package.
-// Updates: nf-md-package_variant + count.
+// Arch Updates 2.0.0: system-update indicator in the dizziee model, with
+// the Omarchy and Arch updates combined into one section. Hover the pill
+// and the tooltip lists every pending package vertically, per category,
+// with its old -> new version, Noctalia-style. Left click opens a panel
+// listing the pending packages per source with an update button each.
+// Right click opens the standalone settings window. Middle click forces
+// a refresh.
 //
-// Why this failed on Caelestia and should work on Omarchy:
-// Caelestia draws bar icons with Material Symbols Rounded and bar text
-// with Rubik, neither of which contains Nerd Font private-use glyphs, so
-// a Nerd glyph pasted into a Caelestia module had no font to fall back
-// to. Omarchy's bar text uses the system monospace font, and upstream
-// Omarchy's monospace is a Nerd Font, so the same glyphs have a font
-// to resolve against. The second glyph is the catch: it lives in the
+// The combined "Omarchy + Arch" section is the whole point of 2.0.0: the
+// Arch update button in dizziee runs a bare pacman system upgrade (with
+// the direct-pacman override env var set to get past Omarchy's guard),
+// which bypasses the managed pipeline and, as its README says, a bare
+// arch update is useless and can be harmful. There is one update action
+// for the combined section and it runs `omarchy update`, the full managed
+// pipeline (transcript, snapshot, keyrings, migrations, post-update
+// hooks). A bare pacman system upgrade is never an update action here,
+// not even with the override env var set. The other sources keep their
+// own safe updater (AUR helper, flatpak update, mise up, omarchy plugin
+// update).
+//
+// Nerd Font icons as QML escapes (ASCII, so they survive every transport
+// layer): no updates nf-oct-package U+F487, updates nf-md-package_variant
+// U+F03D6 (surrogate pair \udb80\udfd6). The second glyph lives in the
 // supplementary plane, U+F03D6, so it needs a Nerd Fonts v3 font. An
 // older v2 Nerd Font will show the first icon and tofu on the second.
-// Test on the live bar before pushing: if the second icon is a box,
-// the font is the problem, not the codes.
+// (Literal UTF-8 glyphs were tried first; the write path dropped them,
+// so the escapes are what ships.)
 //
-// Glyphs are written literally here on purpose. Writing the second one
-// as "\udb80\udfd6" is also correct QML, but that escape has been
-// mangled by JSON/shell layers before, while a literal UTF-8 glyph
-// survives a plain file copy. Codes, for reference:
-//   no updates: nf-oct-package, U+F487, \uf487
-//   updates:    nf-md-package_variant, U+F03D6, \udb80\udfd6
+// How it works: scripts/check_updates.py counts repo, AUR, Flatpak, mise,
+// git shell plugins and git themes, and prints one JSON document:
+//   {"repos": [{"id", "name", "count", "installed", "packages", ...}], "total": N}
+// A package is {"name", "from", "to"} for a versioned update, or
+// {"name", "behind"} for a git checkout. The widget polls it on a timer,
+// shows the icon plus total as a badge, builds the hover tooltip from the
+// detail lists (buildTooltip), and hands the repos to Panel.qml for the
+// click-to-open list. The scanner is check-only: nothing there installs
+// anything. Run via python3, so there is no executable-bit problem on a
+// plugin update (git does not always preserve it).
 //
-// How it works: check-updates.sh counts repo (checkupdates), AUR
-// (yay/paru -Qua), mise dev tools (mise outdated), git shell plugins
-// (tracked branch behind) and git themes (upstream behind), prints
-// "<total> <repo> <aur> <mise> <plugins> <themes>" on line 1, then one
-// tab-separated detail line per pending item:
-//   repo/aur/mise: "<cat>\t<name>\t<old>\t<new>"
-//   plugin/theme:  "<cat>\t<name>\t<commits-behind>"
-// This widget polls it on a timer, shows the icon plus total as a badge,
-// and builds the hover tooltip from the detail lists (buildTooltip).
-// Left click opens the updater, middle click forces a refresh.
+// Settings live in the widget's bar layout entry (refreshIntervalSec,
+// alwaysShow, autoRefresh, checkAur, checkFlatpak, checkMise,
+// checkPlugins) and are edited from the bar's settings window System tab
+// or the standalone SystemSettings window (right-click). Both write
+// through setSystem(), which is the same updateEntryInline the bar's
+// window uses, so the two stay in sync.
 //
 // Tooltip note: the bubble is rendered by the bar, not this widget, and
 // the bar centers every line (AlignHCenter, monospace bar font). A plain
@@ -54,97 +66,141 @@ import qs.Ui
 // braille blank, which is not whitespace at all.
 // v1.7.0 tried a click-to-open panel (Panel.qml) instead; the panel
 // window never mapped under the Nyxiri bar, and the hover list is what
-// was asked for, so the panel is gone as of v1.7.1.
-//
-// Settings: edit intervalMinutes below (minutes between checks). Default 60.
-// If you rename this plugin, update the script path in checkProc.command.
+// was asked for, so the panel is gone as of v1.7.1. 2.0.0 brings the panel
+// back on the clock widget's proven pattern: a Panel.qml loaded through
+// a Loader, with a KeyboardPanel anchored to the badge.
 
 BarWidget {
   id: root
   moduleName: "pizza.dirty.arch-updates"
 
-  // Command run on left click. Uses Omarchy's presentation wrapper, same
-  // as the stock SystemUpdate widget: it shows the Omarchy logo, runs the
-  // update, then waits for a keypress on Done/Failed, so the terminal
-  // stays open after a clean run instead of closing the second the
-  // update exits. Plain xdg-terminal-exec closed instantly on success,
-  // which looked like a crash at the AUR stage (the last step).
-  // Note: omarchy update covers system, AUR and mise. Shell plugins and
-  // themes are counted here but updated separately (omarchy plugin update,
-  // theme git pull), so the badge can still show those after an update.
-  property string updateCommand: "omarchy-launch-floating-terminal-with-presentation omarchy update"
-
-  // Minutes between update checks. Change this number to suit.
-  property int intervalMinutes: 60
+  // Nerd Font icons as QML escapes (ASCII, so they survive every
+  // transport layer): no updates nf-oct-package U+F487, updates
+  // nf-md-package_variant U+F03D6 (surrogate pair \udb80\udfd6).
+  property string noUpdatesIcon: "\uf487"
+  property string updatesIcon: "\udb80\udfd6"
 
   // Rows shown per category in the tooltip before an "...and N more" line.
   // A 50-package tooltip would run off the bottom of the screen.
   property int tooltipRowsPerCategory: 20
 
-  // Nerd Font icons, literal UTF-8 glyphs, see header comment.
-  property string noUpdatesIcon: ""
-  property string updatesIcon: "󰏖"
-
+  property var repos: []
   property int totalCount: 0
-  property int repoCount: 0
-  property int aurCount: 0
-  property int miseCount: 0
-  property int pluginsCount: 0
-  property int themesCount: 0
   property bool checked: false
   property string checkedAt: ""
   property string detailText: ""
+  property string lastCacheText: ""
 
-  // Detail lists, one entry per pending item. Versioned entries are
-  // { name, oldVersion, newVersion }; plugin/theme entries are
-  // { name, behind } (no version exists for a git checkout).
-  property var repoList: []
-  property var aurList: []
-  property var miseList: []
-  property var pluginsList: []
-  property var themesList: []
+  // The combined Omarchy + Arch repo, for the tooltip and the panel.
+  readonly property var systemRepo: {
+    for (var i = 0; i < root.repos.length; i++) {
+      if (root.repos[i].id === "system") return root.repos[i]
+    }
+    return null
+  }
 
   readonly property bool hasUpdates: root.totalCount > 0
 
-  implicitWidth: badge.implicitWidth
-  implicitHeight: badge.implicitHeight
-
-  function runCheck() {
-    if (!checkProc.running) checkProc.running = true
+  // `omarchy bar set` stores a bare value as a JSON string unless --json
+  // is used, so a boolean read back from shell.json can be "false".
+  // Coerce it instead of treating every non-false value as true.
+  function boolValue(value, fallback) {
+    if (value === undefined || value === null) return fallback
+    if (typeof value === "string") return value !== "false" && value !== "0" && value !== ""
+    return value !== false
   }
 
-  // Build the hover tooltip from the detail lists. All five sections are
-  // always shown, even at (0), rows "  name old → new" under the ones
-  // that have items (plugins/themes show "  name (N commits behind)"
-  // instead). An old script that prints counts only leaves every list
-  // empty, so that just shows the five headers with counts and no rows.
-  // Lines are padded with no-break spaces to the longest line's length
-  // so the bar's centered tooltip reads as left-aligned (see header
-  // comment for why plain spaces failed).
-  // Stored in detailText, not computed in the binding, so it only
-  // changes when a check lands.
+  function boolSetting(name, fallback) {
+    return root.boolValue(setting(name, fallback), fallback)
+  }
+
+  readonly property int refreshIntervalSec: {
+    var value = Number(setting("refreshIntervalSec", 1800))
+    if (!isFinite(value)) value = 1800
+    return Math.round(Math.max(300, Math.min(7200, value)))
+  }
+  readonly property bool alwaysShow: root.boolSetting("alwaysShow", true)
+  readonly property bool autoRefresh: root.boolSetting("autoRefresh", true)
+
+  // Per-source toggles, passed to the scanner as --no-* flags. A source
+  // that is off is skipped entirely and reported installed=false.
+  function scannerArgs() {
+    var args = []
+    if (!root.boolSetting("checkAur", true)) args.push("--no-aur")
+    if (!root.boolSetting("checkFlatpak", true)) args.push("--no-flatpak")
+    if (!root.boolSetting("checkMise", true)) args.push("--no-mise")
+    if (!root.boolSetting("checkPlugins", true)) args.push("--no-plugins")
+    return args
+  }
+
+  // Last-good scan result on disk: the bar renders it instantly at shell
+  // start with zero spawns, and the first live scan replaces it. The file
+  // lives in ~/.cache/omarchy, which already exists.
+  readonly property string cachePath: {
+    var base = Quickshell.env("XDG_CACHE_HOME")
+    if (!base) base = Quickshell.env("HOME") + "/.cache"
+    return base + "/omarchy/pizza.dirty.arch-updates.json"
+  }
+
+  readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/scripts/check_updates.py"
+
+  function runCheck() {
+    if (checkProc.running) return
+    checkProc.command = ["python3", root.scriptPath].concat(root.scannerArgs())
+    checkProc.running = true
+  }
+
+  function updateRepos(raw) {
+    var text = String(raw || "")
+    var parsed = Model.parseRepoList(text)
+    root.repos = parsed.repos
+    root.totalCount = parsed.total
+    root.checkedAt = new Date().toLocaleTimeString()
+    root.checked = true
+    root.detailText = root.buildTooltip()
+    // One small disk write per changed result, not per poll; the
+    // text !== lastCacheText guard also makes a write->load echo a no-op.
+    if (text !== "" && text !== root.lastCacheText) {
+      root.lastCacheText = text
+      try { cacheFile.setText(text) } catch (e) {}
+    }
+  }
+
+  // Build the hover tooltip from the repos. All five sections are always
+  // shown, even at (0), rows "  name old → new" under the ones that have
+  // items (plugins/themes show "  name (N commits behind)" instead). Lines
+  // are padded with no-break spaces to the longest line's length so the
+  // bar's centered tooltip reads as left-aligned (see header comment for
+  // why plain spaces failed). Stored in detailText, not computed in the
+  // binding, so it only changes when a check lands.
   function buildTooltip() {
-    if (!root.hasUpdates) return "No updates pending · Click to update"
+    if (!root.hasUpdates) return "No updates pending · Click for details"
     var lines = [root.totalCount + " updates pending"]
     var sections = [
-      { title: "Repo", count: root.repoCount, list: root.repoList, versioned: true },
-      { title: "AUR", count: root.aurCount, list: root.aurList, versioned: true },
-      { title: "Mise", count: root.miseCount, list: root.miseList, versioned: true },
-      { title: "Plugins", count: root.pluginsCount, list: root.pluginsList, versioned: false },
-      { title: "Themes", count: root.themesCount, list: root.themesList, versioned: false }
+      { id: "system", title: "Omarchy + Arch", versioned: true },
+      { id: "aur", title: "AUR", versioned: true },
+      { id: "flatpak", title: "Flatpak", versioned: true },
+      { id: "plugins", title: "Plugins & Themes", versioned: false },
+      { id: "mise", title: "mise", versioned: true }
     ]
     for (var s = 0; s < sections.length; s++) {
       var section = sections[s]
-      lines.push(section.title + " (" + section.count + ")")
-      var shown = Math.min(section.list.length, root.tooltipRowsPerCategory)
+      var repo = null
+      for (var r = 0; r < root.repos.length; r++) {
+        if (root.repos[r].id === section.id) { repo = root.repos[r]; break }
+      }
+      if (!repo || repo.installed !== true) continue
+      lines.push(section.title + " (" + repo.count + ")")
+      var list = repo.packages || []
+      var shown = Math.min(list.length, root.tooltipRowsPerCategory)
       for (var i = 0; i < shown; i++) {
-        var entry = section.list[i]
-        if (section.versioned) lines.push("  " + entry.name + " " + entry.oldVersion + " → " + entry.newVersion)
+        var entry = list[i]
+        if (section.versioned) lines.push("  " + entry.name + " " + entry.from + " → " + entry.to)
         else lines.push("  " + entry.name + " (" + entry.behind + " commits behind)")
       }
-      if (section.list.length > shown) lines.push("  …and " + (section.list.length - shown) + " more")
+      if (list.length > shown) lines.push("  …and " + (list.length - shown) + " more")
     }
-    lines.push("Click to update")
+    lines.push("Click for details")
     var maxLen = 0
     for (var p = 0; p < lines.length; p++) if (lines[p].length > maxLen) maxLen = lines[p].length
     for (var q = 0; q < lines.length; q++) {
@@ -153,76 +209,180 @@ BarWidget {
     return lines.join("\n")
   }
 
-  // Parse the script output: line 1 is the counts, the rest are
-  // tab-separated detail lines.
-  function parseCheck(text) {
-    var lines = String(text || "").trim().split("\n")
-    if (lines.length === 0 || lines[0] === "") return
-    var parts = lines[0].trim().split(/\s+/)
-    if (parts.length !== 3 && parts.length !== 6) return
-    var total = parseInt(parts[0], 10)
-    var repo = parseInt(parts[1], 10)
-    var aur = parseInt(parts[2], 10)
-    var mise = parts.length === 6 ? parseInt(parts[3], 10) : 0
-    var plugins = parts.length === 6 ? parseInt(parts[4], 10) : 0
-    var themes = parts.length === 6 ? parseInt(parts[5], 10) : 0
-    if (isNaN(total) || isNaN(repo) || isNaN(aur) || isNaN(mise) || isNaN(plugins) || isNaN(themes)) return
-    var repoList = []
-    var aurList = []
-    var miseList = []
-    var pluginsList = []
-    var themesList = []
-    for (var i = 1; i < lines.length; i++) {
-      var fields = lines[i].split("\t")
-      if (fields.length < 3) continue
-      var cat = fields[0]
-      if ((cat === "repo" || cat === "aur" || cat === "mise") && fields.length >= 4) {
-        var entry = { name: fields[1], oldVersion: fields[2], newVersion: fields[3] }
-        if (cat === "repo") repoList.push(entry)
-        else if (cat === "aur") aurList.push(entry)
-        else miseList.push(entry)
-      } else if ((cat === "plugin" || cat === "theme") && fields.length >= 3) {
-        var behind = parseInt(fields[2], 10)
-        var gitEntry = { name: fields[1], behind: isNaN(behind) ? 0 : behind }
-        if (cat === "plugin") pluginsList.push(gitEntry)
-        else themesList.push(gitEntry)
-      }
-    }
-    root.totalCount = total
-    root.repoCount = repo
-    root.aurCount = aur
-    root.miseCount = mise
-    root.pluginsCount = plugins
-    root.themesCount = themes
-    root.repoList = repoList
-    root.aurList = aurList
-    root.miseList = miseList
-    root.pluginsList = pluginsList
-    root.themesList = themesList
-    root.checkedAt = new Date().toLocaleTimeString()
-    root.checked = true
-    root.detailText = root.buildTooltip()
+  // Update commands are owned by this widget, not by the scan output.
+  // The scanner is user-writable output, so a command read back from it
+  // must never reach a shell. Model.updateCommandFor rebuilds the command
+  // from the repo id (and, for AUR, the helper as a fixed enum).
+  function shellQuote(value) {
+    return "'" + String(value).replace(/'/g, "'\\''") + "'"
   }
+
+  function updateRepo(id) {
+    var repo = null
+    for (var i = 0; i < root.repos.length; i++) {
+      if (root.repos[i].id === id) { repo = root.repos[i]; break }
+    }
+    var cmd = Model.updateCommandFor(repo)
+    if (!cmd) return
+    // After an update starts, rescan on a fast poll until the updater
+    // terminal is done: the numbers go stale the moment packages land.
+    root.pendingRepo = id
+    root.fastPollCount = 0
+    root.fastPollActive = true
+    root.fastPollTimer.interval = 10000
+    root.fastPollTimer.restart()
+    if (root.bar) root.bar.run("omarchy-launch-terminal bash -c " + root.shellQuote(cmd))
+  }
+
+  property string pendingRepo: ""
+  property bool fastPollActive: false
+  property int fastPollCount: 0
+  readonly property int maxFastPolls: 30
+
+  function stopFastPoll() {
+    root.pendingRepo = ""
+    root.fastPollActive = false
+    root.fastPollTimer.stop()
+    root.fastPollTimer.interval = 10000
+    root.runCheck()
+  }
+
+  // Write the system settings the same way the bar's settings window
+  // does: updateEntryInline replaces rather than merges, so the existing
+  // settings are copied first and the patch applied on top. The shell.json
+  // write comes back through the bar as the same values, so the bar's
+  // window and the standalone popup stay in sync: both write to the same
+  // layout entry.
+  function setSystem(patch) {
+    if (!root.bar || !root.bar.shell || typeof root.bar.shell.updateEntryInline !== "function") return false
+    var entry = { id: root.moduleName }
+    var current = root.settings || {}
+    for (var key in current) if (key !== "id") entry[key] = current[key]
+    for (var patchName in patch) entry[patchName] = patch[patchName]
+    root.settings = entry
+    return root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  // Standalone settings: right-click the badge opens the SystemSettings
+  // window. It is the same controls as the bar's settings window System
+  // tab, so the plugin is usable on its own (stock bar, no Nyxiri bar),
+  // where there is no bar settings window.
+  property bool settingsOpen: false
+
+  function toggleSettings() {
+    root.settingsOpen = !root.settingsOpen
+  }
+
+  // The update-list panel, on the clock widget's proven pattern: a
+  // Panel.qml loaded through a Loader, with a KeyboardPanel anchored to
+  // the badge. The bar tracks this widget, not the nested panel.
+  function injectPanel() {
+    var target = panelLoader.item
+    if (!target) return
+    if ("bar" in target) target.bar = root.bar
+    if ("settings" in target) target.settings = root.settings
+    if ("anchorItem" in target) target.anchorItem = badge
+    if ("hostWidget" in target) target.hostWidget = root
+  }
+
+  readonly property bool panelOpened: panelLoader.item ? panelLoader.item.opened === true : false
+
+  function openPanel() {
+    if (panelLoader.item) panelLoader.item.open()
+    root.runCheck()
+  }
+
+  function closePanel() {
+    if (panelLoader.item) panelLoader.item.close()
+  }
+
+  function togglePanel() {
+    if (!panelLoader.item) return
+    if (panelLoader.item.opened) panelLoader.item.close()
+    else { panelLoader.item.open(); root.runCheck() }
+  }
+
+  implicitWidth: badge.implicitWidth
+  implicitHeight: badge.implicitHeight
+  visible: root.totalCount > 0 || root.alwaysShow
 
   Process {
     id: checkProc
-    // Run via bash so the check works even if the script loses its
-    // executable bit on a plugin update (git does not always preserve it).
-    command: ["bash", Quickshell.env("HOME") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/check-updates.sh"]
     stdout: StdioCollector {
-      onStreamFinished: root.parseCheck(text)
+      waitForEnd: true
+      onStreamFinished: root.updateRepos(text)
+    }
+    stderr: StdioCollector {
+      id: checkErr
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        var detail = String(checkErr.text || "").replace(/\s+/g, " ").trim()
+        console.warn("arch-updates: scanner exited with code " + exitCode
+          + (detail !== "" ? ": " + detail : ""))
+      }
+    }
+  }
+
+  FileView {
+    id: cacheFile
+    path: root.cachePath
+    watchChanges: false
+    printErrors: false
+    onLoaded: {
+      root.lastCacheText = String(text() || "")
+      root.updateRepos(text())
     }
   }
 
   Timer {
     id: checkTimer
-    interval: root.intervalMinutes * 60000
-    running: true
+    interval: root.refreshIntervalSec * 1000
+    running: root.autoRefresh
     repeat: true
     onTriggered: root.runCheck()
   }
 
+  Timer {
+    id: fastPollTimer
+    interval: 10000
+    running: false
+    repeat: true
+    onTriggered: {
+      root.runCheck()
+      root.fastPollCount++
+      // Back off while the updater terminal stays open: early polls catch
+      // a quick update, later ones just keep the numbers from going stale.
+      if (root.fastPollCount >= 5) fastPollTimer.interval = 30000
+      if (root.fastPollCount >= root.maxFastPolls) root.stopFastPoll()
+    }
+  }
+
   Component.onCompleted: root.runCheck()
+
+  Loader {
+    id: panelLoader
+    active: true
+    source: Qt.resolvedUrl("Panel.qml")
+    visible: false
+    onLoaded: {
+      root.injectPanel()
+      Qt.callLater(root.injectPanel)
+    }
+  }
+
+  // The standalone settings window, one per bar surface. It opens on
+  // right-click and closes from its own Close button or Escape.
+  SystemSettings {
+    bar: root.bar
+    hostWidget: root
+    visible: root.settingsOpen
+    screen: {
+      var window = root.QsWindow.window
+      return window ? window.screen : null
+    }
+  }
 
   WidgetButton {
     id: badge
@@ -234,11 +394,9 @@ BarWidget {
     fixedHeight: root.barSize
     tooltipText: !root.checked ? "Checking for updates…" : root.detailText
     onPressed: function(button) {
-      if (button === Qt.LeftButton) {
-        if (root.bar) root.bar.run(root.updateCommand)
-      } else if (button === Qt.MiddleButton) {
-        root.runCheck()
-      }
+      if (button === Qt.RightButton) { root.toggleSettings(); return }
+      if (button === Qt.MiddleButton) { root.runCheck(); return }
+      root.togglePanel()
     }
   }
 }
