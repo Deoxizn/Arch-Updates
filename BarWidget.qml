@@ -215,11 +215,22 @@ BarWidget {
   // from the repo id (and, for AUR, the helper as a fixed enum).
   //
   // The launch goes through a Process with an argv array, not through
-  // bar.run / execDetached with a shell-quoted string: the quoted string
-  // never reached a terminal (the Update button showed "…" and nothing
-  // opened), while the menu's own code runs `bash -c` commands through a
-  // Process argv array. Passing argv directly means bash -c gets the
-  // update command verbatim, with no shell splitting in between.
+  // bar.run / execDetached with a shell-quoted string: passing argv
+  // directly means bash -c gets the update command verbatim, with no
+  // shell splitting in between.
+  //
+  // The launcher is xdg-terminal-exec, NOT omarchy-launch-terminal.
+  // Both the old bar.run quoted string and the e78e936 Process argv used
+  // omarchy-launch-terminal and both failed the same way: no terminal
+  // opened and the "…" stuck. That wrapper is `setsid uwsm-app --
+  // xdg-terminal-exec ...`, and the setsid/uwsm-app layer dies silently
+  // when launched from the shell process. xdg-terminal-exec is the binary
+  // the wrapper itself ends at, and the one the menu uses (via bar.run)
+  // to open a terminal, which works. So skip the wrapper and launch the
+  // terminal directly. (Second-window theory checked and ruled out: the
+  // Process lives in this main widget, the panel only calls
+  // hostWidget.updateRepo(id), and Processes from second windows work
+  // fine elsewhere, the workspaces popup runs bin/mode that way.)
   function updateRepo(id) {
     var repo = null
     for (var i = 0; i < root.repos.length; i++) {
@@ -234,7 +245,8 @@ BarWidget {
     root.fastPollActive = true
     root.fastPollTimer.interval = 10000
     root.fastPollTimer.restart()
-    launchProc.command = ["omarchy-launch-terminal", "bash", "-c", cmd]
+    root.launchStartedAt = Date.now()
+    launchProc.command = ["xdg-terminal-exec", "bash", "-c", cmd]
     launchProc.running = true
   }
 
@@ -242,6 +254,10 @@ BarWidget {
   property bool fastPollActive: false
   property int fastPollCount: 0
   readonly property int maxFastPolls: 30
+  // Milliseconds since the epoch when the current update terminal was
+  // launched, so onExited can tell a terminal that opened and closed
+  // from a launcher that detached at once.
+  property double launchStartedAt: 0
 
   function stopFastPoll() {
     root.pendingRepo = ""
@@ -344,16 +360,22 @@ BarWidget {
   }
 
   // Terminal launcher for the Update buttons. The command is an argv
-  // array, so bash -c gets the update command verbatim. If the launcher
-  // itself fails (bad exit code), clear the pending "…" right away and
-  // rescan instead of leaving it stuck until the fast poll gives up.
-  // A clean exit means the terminal is open, so the fast poll keeps
-  // running until the numbers settle.
+  // array, so bash -c gets the update command verbatim. xdg-terminal-exec
+  // execs the terminal, so the process lives as long as the terminal
+  // window: an exit after the window was open a while means the user
+  // closed it and the update is over, so stop the fast poll and rescan.
+  // An exit within a few seconds means the launcher detached at once
+  // (some terminals fork on launch); the fast poll keeps running then
+  // and rescans until the numbers settle. Any non-zero exit is a failed
+  // launch: clear the pending "…" right away and rescan instead of
+  // leaving it stuck until the fast poll gives up.
   Process {
     id: launchProc
     onExited: function(exitCode) {
       if (exitCode !== 0) {
         console.warn("arch-updates: terminal launcher exited with code " + exitCode)
+        root.stopFastPoll()
+      } else if (Date.now() - root.launchStartedAt > 5000) {
         root.stopFastPoll()
       }
     }

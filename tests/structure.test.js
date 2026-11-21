@@ -96,12 +96,19 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   // Updates open a terminal (dizziee's approach) and rescan after.
   // The launch is a Process with an argv array, not a shell-quoted
   // string through bar.run: the quoted string never reached a terminal.
-  assert.match(widget, /launchProc\.command = \["omarchy-launch-terminal", "bash", "-c", cmd\]/)
+  // The launcher is xdg-terminal-exec, not omarchy-launch-terminal:
+  // the wrapper (setsid uwsm-app) dies silently from the shell process,
+  // so both the bar.run string and a Process argv with it failed the
+  // same way, no terminal and a stuck "…".
+  assert.match(widget, /launchProc\.command = \["xdg-terminal-exec", "bash", "-c", cmd\]/)
   assert.match(widget, /launchProc\.running = true/)
   assert.doesNotMatch(widget, /shellQuote/)
-  assert.doesNotMatch(widget, /bar\.run\("omarchy-launch-terminal/)
+  assert.doesNotMatch(widget, /launchProc\.command = \["omarchy-launch-terminal"/)
   // A failed launch clears the pending "…" instead of leaving it stuck.
+  // A terminal that opened and closed also ends the fast poll.
   assert.match(widget, /id: launchProc[\s\S]*?onExited: function\(exitCode\) \{[\s\S]*?if \(exitCode !== 0\) \{[\s\S]*?root\.stopFastPoll\(\)/)
+  assert.match(widget, /launchStartedAt/)
+  assert.match(widget, /Date\.now\(\) - root\.launchStartedAt > 5000/)
   assert.match(widget, /Model\.updateCommandFor\(repo\)/)
   assert.match(widget, /fastPollTimer/)
   // The standalone settings window, one per bar surface.
