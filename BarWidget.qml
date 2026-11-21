@@ -177,7 +177,7 @@ BarWidget {
     if (!root.hasUpdates) return "No updates pending · Click for details"
     var lines = [root.totalCount + " updates pending"]
     var sections = [
-      { id: "system", title: "Omarchy + Arch", versioned: true },
+      { id: "system", title: "System", versioned: true },
       { id: "aur", title: "AUR", versioned: true },
       { id: "flatpak", title: "Flatpak", versioned: true },
       { id: "plugins", title: "Plugins & Themes", versioned: false },
@@ -213,10 +213,13 @@ BarWidget {
   // The scanner is user-writable output, so a command read back from it
   // must never reach a shell. Model.updateCommandFor rebuilds the command
   // from the repo id (and, for AUR, the helper as a fixed enum).
-  function shellQuote(value) {
-    return "'" + String(value).replace(/'/g, "'\\''") + "'"
-  }
-
+  //
+  // The launch goes through a Process with an argv array, not through
+  // bar.run / execDetached with a shell-quoted string: the quoted string
+  // never reached a terminal (the Update button showed "…" and nothing
+  // opened), while the menu's own code runs `bash -c` commands through a
+  // Process argv array. Passing argv directly means bash -c gets the
+  // update command verbatim, with no shell splitting in between.
   function updateRepo(id) {
     var repo = null
     for (var i = 0; i < root.repos.length; i++) {
@@ -231,7 +234,8 @@ BarWidget {
     root.fastPollActive = true
     root.fastPollTimer.interval = 10000
     root.fastPollTimer.restart()
-    if (root.bar) root.bar.run("omarchy-launch-terminal bash -c " + root.shellQuote(cmd))
+    launchProc.command = ["omarchy-launch-terminal", "bash", "-c", cmd]
+    launchProc.running = true
   }
 
   property string pendingRepo: ""
@@ -335,6 +339,22 @@ BarWidget {
         var detail = String(checkErr.text || "").replace(/\s+/g, " ").trim()
         console.warn("arch-updates: scanner exited with code " + exitCode
           + (detail !== "" ? ": " + detail : ""))
+      }
+    }
+  }
+
+  // Terminal launcher for the Update buttons. The command is an argv
+  // array, so bash -c gets the update command verbatim. If the launcher
+  // itself fails (bad exit code), clear the pending "…" right away and
+  // rescan instead of leaving it stuck until the fast poll gives up.
+  // A clean exit means the terminal is open, so the fast poll keeps
+  // running until the numbers settle.
+  Process {
+    id: launchProc
+    onExited: function(exitCode) {
+      if (exitCode !== 0) {
+        console.warn("arch-updates: terminal launcher exited with code " + exitCode)
+        root.stopFastPoll()
       }
     }
   }

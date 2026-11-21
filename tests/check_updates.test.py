@@ -102,7 +102,7 @@ class TestMainContract(unittest.TestCase):
         by_id = {repo["id"]: repo for repo in data["repos"]}
         self.assertEqual(set(by_id), {"system", "aur", "flatpak", "plugins", "mise"})
         system = by_id["system"]
-        self.assertEqual(system["name"], "Omarchy + Arch")
+        self.assertEqual(system["name"], "System")
         self.assertEqual(system["count"], 2)
         self.assertTrue(system["installed"])
         self.assertTrue(system["omarchyPending"])

@@ -36,7 +36,7 @@ test("the old bash scanner is gone; the Python scanner is the only checker", () 
   assert.ok(exists("SystemSettings.qml"), "SystemSettings.qml missing")
 })
 
-test("the combined Omarchy + Arch section updates with omarchy update, never bare pacman", () => {
+test("the System section updates with omarchy update, never bare pacman", () => {
   const model = read("Model.js")
   // The system repo's only update command is the managed pipeline.
   assert.match(model, /if \(id === "system"\) return "omarchy update; echo; read/)
@@ -94,7 +94,14 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   assert.match(widget, /args\.push\("--no-mise"\)/)
   assert.match(widget, /args\.push\("--no-plugins"\)/)
   // Updates open a terminal (dizziee's approach) and rescan after.
-  assert.match(widget, /omarchy-launch-terminal bash -c/)
+  // The launch is a Process with an argv array, not a shell-quoted
+  // string through bar.run: the quoted string never reached a terminal.
+  assert.match(widget, /launchProc\.command = \["omarchy-launch-terminal", "bash", "-c", cmd\]/)
+  assert.match(widget, /launchProc\.running = true/)
+  assert.doesNotMatch(widget, /shellQuote/)
+  assert.doesNotMatch(widget, /bar\.run\("omarchy-launch-terminal/)
+  // A failed launch clears the pending "…" instead of leaving it stuck.
+  assert.match(widget, /id: launchProc[\s\S]*?onExited: function\(exitCode\) \{[\s\S]*?if \(exitCode !== 0\) \{[\s\S]*?root\.stopFastPoll\(\)/)
   assert.match(widget, /Model\.updateCommandFor\(repo\)/)
   assert.match(widget, /fastPollTimer/)
   // The standalone settings window, one per bar surface.
@@ -181,7 +188,7 @@ test("the panel reopens after any close: widget owns the panel contract and the 
 test("the scanner emits the combined system repo and per-source flags", () => {
   const scanner = read("scripts/check_updates.py")
   assert.match(scanner, /"system"/)
-  assert.match(scanner, /"Omarchy \+ Arch"/)
+  assert.match(scanner, /"system",\s+"System",/)
   assert.match(scanner, /omarchyPending/)
   assert.match(scanner, /OMARCHY_PACKAGES/)
   assert.match(scanner, /--no-aur/)

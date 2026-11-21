@@ -416,7 +416,7 @@ def main(argv=None):
     repos = [
         collect_repo(
             "system",
-            "Omarchy + Arch",
+            "System",
             system_packages,
             True,
             omarchyPending=omarchy_pending,
