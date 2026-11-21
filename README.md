@@ -56,7 +56,9 @@ rescans on a fast poll until the numbers settle.
 - Panel (left click): one card per installed source, click a card to
   expand it and list the pending packages with their version change
   (or commits behind for plugins/themes). Each card has its own Update
-  button. `R` refreshes, `S` opens settings, Escape closes.
+  button. `R` refreshes, `S` opens settings, Escape closes. So do the X
+  in the upper right, the Close button at the bottom, and clicking outside
+  the panel; it reopens on the next click either way.
 - Left click: opens the panel. Middle click: forces an immediate
   recheck. Right click: opens the standalone settings window.
 
@@ -126,13 +128,13 @@ so the old widget stays in memory until restart. The scanner is run via
 2.0.0 replaces `check-updates.sh` with `scripts/check_updates.py` and
 renames the check interval setting from `intervalMinutes` (minutes,
 default 60) to `refreshIntervalSec` (seconds, default 1800). An old
-`intervalMinutes` value is ignored; set the interval in the System tab
+`intervalMinutes` value is ignored; set the interval in the System Updater tab
 or the standalone settings window.
 
 ## Settings
 
 All settings live in the widget's bar layout entry and are edited from
-the Nyxiri bar's settings window (System tab) or the standalone settings
+the Nyxiri bar's settings window (System Updater tab) or the standalone settings
 window (right-click the badge). Both write the same entry, so they stay
 in sync.
 
