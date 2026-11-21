@@ -31,6 +31,7 @@ test("manifest is version 2.0.0 and declares the system settings", () => {
 test("the old bash scanner is gone; the Python scanner is the only checker", () => {
   assert.ok(!exists("check-updates.sh"), "check-updates.sh must be deleted")
   assert.ok(exists("scripts/check_updates.py"), "scripts/check_updates.py missing")
+  assert.ok(exists("scripts/update_plugins_themes.py"), "scripts/update_plugins_themes.py missing")
   assert.ok(exists("Model.js"), "Model.js missing")
   assert.ok(exists("Panel.qml"), "Panel.qml missing")
   assert.ok(exists("SystemSettings.qml"), "SystemSettings.qml missing")
@@ -51,7 +52,12 @@ test("the System section updates with omarchy update, never bare pacman", () => 
   assert.match(model, /if \(id === "aur"\)/)
   assert.match(model, /return helper \+ " -Sua"/)
   assert.match(model, /if \(id === "flatpak"\) return "flatpak update"/)
-  assert.match(model, /if \(id === "plugins"\) return "omarchy plugin update --yes; omarchy theme update"/)
+  // Plugins & Themes update selectively: the widget passes the helper
+  // script path, and the blanket `omarchy plugin update --yes;
+  // omarchy theme update` is only the fallback when no path is given.
+  assert.match(model, /if \(id === "plugins"\) \{/)
+  assert.match(model, /return "python3 " \+ script/)
+  assert.match(model, /return "omarchy plugin update --yes; omarchy theme update"/)
   assert.match(model, /if \(id === "mise"\) return "MISE_MINIMUM_RELEASE_AGE=0 mise up"/)
   // The AUR helper is a fixed enum: an unknown helper yields no command.
   assert.match(model, /AUR_HELPERS/)
@@ -110,7 +116,8 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   assert.doesNotMatch(widget, /launchProc\.command/)
   // The fast poll ends when a rescan shows the pending repo at zero.
   assert.match(widget, /root\.repos\[i\]\.id === root\.pendingRepo && root\.repos\[i\]\.count === 0/)
-  assert.match(widget, /Model\.updateCommandFor\(repo\)/)
+  assert.match(widget, /Model\.updateCommandFor\(repo, root\.updateScriptPath\)/)
+  assert.match(widget, /updateScriptPath: .*scripts\/update_plugins_themes\.py/)
   assert.match(widget, /fastPollTimer/)
   // The standalone settings window, one per bar surface.
   assert.match(widget, /SystemSettings \{/)

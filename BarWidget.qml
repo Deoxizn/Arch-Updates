@@ -143,6 +143,7 @@ BarWidget {
   }
 
   readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/scripts/check_updates.py"
+  readonly property string updateScriptPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/scripts/update_plugins_themes.py"
 
   function runCheck() {
     if (checkProc.running) return
@@ -258,7 +259,7 @@ BarWidget {
     for (var i = 0; i < root.repos.length; i++) {
       if (root.repos[i].id === id) { repo = root.repos[i]; break }
     }
-    var cmd = Model.updateCommandFor(repo)
+    var cmd = Model.updateCommandFor(repo, root.updateScriptPath)
     if (!cmd) return
     // After an update starts, rescan on a fast poll until the updater
     // terminal is done: the numbers go stale the moment packages land.

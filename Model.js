@@ -48,7 +48,7 @@ function boolValue(value, fallback) {
 // waits for a keypress itself. (The 2.0.0 read-prompt suffix was a
 // workaround for plain xdg-terminal-exec closing instantly on success;
 // with the wrapper it would prompt twice.)
-function updateCommandFor(repo) {
+function updateCommandFor(repo, updateScriptPath) {
   var id = String((repo && repo.id) || "")
   if (id === "system") return "omarchy update"
   if (id === "aur") {
@@ -57,7 +57,16 @@ function updateCommandFor(repo) {
     return helper + " -Sua"
   }
   if (id === "flatpak") return "flatpak update"
-  if (id === "plugins") return "omarchy plugin update --yes; omarchy theme update"
+  if (id === "plugins") {
+    // Selective update: scripts/update_plugins_themes.py checks each
+    // plugin and theme first and only pulls the ones behind upstream.
+    // The blanket `omarchy plugin update --yes; omarchy theme update`
+    // touches every plugin and pulls every theme on each run. It stays
+    // as the fallback when the widget did not pass a script path.
+    var script = String(updateScriptPath || "")
+    if (script) return "python3 " + script
+    return "omarchy plugin update --yes; omarchy theme update"
+  }
   if (id === "mise") return "MISE_MINIMUM_RELEASE_AGE=0 mise up"
   return ""
 }
