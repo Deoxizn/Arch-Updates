@@ -35,7 +35,7 @@ System and Arch updates run together with `omarchy update`. The other sources us
 
 ## Settings
 
-Change these in the Nyxiri bar settings (System Updater tab), or right-click the icon.
+Two ways in: right-click the badge to open the standalone settings window, or open the bar settings window and use its System Updater tab. Both edit the same settings.
 
 | Setting | What it does | Default |
 |---|---|---|
