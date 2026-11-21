@@ -267,8 +267,8 @@ BarWidget {
     root.pendingRepo = id
     root.fastPollCount = 0
     root.fastPollActive = true
-    root.fastPollTimer.interval = 10000
-    root.fastPollTimer.restart()
+    fastPollTimer.interval = 10000
+    fastPollTimer.restart()
     if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation " + root.shellQuote(cmd))
   }
 
@@ -280,8 +280,8 @@ BarWidget {
   function stopFastPoll() {
     root.pendingRepo = ""
     root.fastPollActive = false
-    root.fastPollTimer.stop()
-    root.fastPollTimer.interval = 10000
+    fastPollTimer.stop()
+    fastPollTimer.interval = 10000
     root.runCheck()
   }
 
