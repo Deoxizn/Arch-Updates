@@ -8,13 +8,26 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 import check_updates
+
+
+def fake_result(returncode=0, stdout=""):
+    class R:
+        pass
+
+    r = R()
+    r.returncode = returncode
+    r.stdout = stdout
+    r.stderr = ""
+    return r
 
 
 class TestParseVersionLines(unittest.TestCase):
@@ -41,6 +54,104 @@ class TestParseVersionLines(unittest.TestCase):
         lines = ["pkg%d 1 -> 2" % i for i in range(check_updates.MAX_PACKAGES + 50)]
         parsed = check_updates.parse_version_lines(lines)
         self.assertEqual(len(parsed), check_updates.MAX_PACKAGES)
+
+
+class TestThemeBehind(unittest.TestCase):
+    def test_goes_through_run_git_not_raw_run(self):
+        calls = []
+
+        def fake_run_git(args, cwd, timeout=15):
+            calls.append(args)
+            if args[0] == "fetch":
+                return fake_result(0)
+            return fake_result(0, "2\n")
+
+        # run_git is stubbed, so any raw git via run() would surface here.
+        with patch.object(check_updates, "run_git", side_effect=fake_run_git), patch.object(
+            check_updates, "run", side_effect=AssertionError("raw run() must not be used")
+        ):
+            entry = check_updates.theme_behind(Path("/tmp/theme-a"))
+        self.assertEqual(entry, {"name": "theme-a", "behind": 2})
+        self.assertEqual(calls[0][0], "fetch")
+        self.assertEqual(calls[1][:2], ["rev-list", "--count"])
+
+    def test_fetch_failure_is_none(self):
+        with patch.object(check_updates, "run_git", return_value=fake_result(1)):
+            self.assertIsNone(check_updates.theme_behind(Path("/tmp/theme-a")))
+
+
+class TestOmarchyCheckoutBehind(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.checkout = Path(self.tmp.name) / "omarchy"
+        (self.checkout / ".git").mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def run_checkout(self, ref_stdout, ref_rc=0):
+        calls = []
+
+        def fake_run_git(args, cwd, timeout=15):
+            calls.append(args)
+            if args[0] == "rev-parse":
+                return fake_result(ref_rc, ref_stdout)
+            if args[0] == "fetch":
+                return fake_result(0)
+            if args[0] == "rev-list":
+                return fake_result(0, "4\n")
+            return fake_result(1)
+
+        with patch.dict(os.environ, {"OMARCHY_PATH": str(self.checkout)}), patch.object(
+            check_updates, "run_git", side_effect=fake_run_git
+        ):
+            return check_updates.omarchy_checkout_behind(), calls
+
+    def test_valid_ref_counts_behind(self):
+        entry, calls = self.run_checkout("origin/main\n")
+        self.assertEqual(entry, {"name": "omarchy-dev-checkout", "behind": 4})
+        self.assertIn(["rev-list", "--count", "HEAD..origin/main"], calls)
+
+    def test_full_sha_ref_is_accepted(self):
+        entry, _ = self.run_checkout("a" * 40 + "\n")
+        self.assertEqual(entry, {"name": "omarchy-dev-checkout", "behind": 4})
+
+    def test_malicious_ref_is_rejected_before_rev_list(self):
+        entry, calls = self.run_checkout("origin/main --upload-pack=touch /tmp/pwned\n")
+        self.assertIsNone(entry)
+        self.assertFalse(any(args[0] == "rev-list" for args in calls))
+
+    def test_dotdot_ref_is_rejected(self):
+        entry, calls = self.run_checkout("origin/../../etc/passwd\n")
+        self.assertIsNone(entry)
+        self.assertFalse(any(args[0] == "rev-list" for args in calls))
+
+    def test_goes_through_run_git_not_raw_run(self):
+        with patch.dict(os.environ, {"OMARCHY_PATH": str(self.checkout)}), patch.object(
+            check_updates, "run_git", side_effect=lambda *a, **k: fake_result(1)
+        ), patch.object(
+            check_updates, "run", side_effect=AssertionError("raw run() must not be used")
+        ):
+            self.assertIsNone(check_updates.omarchy_checkout_behind())
+
+
+class TestThemeDirs(unittest.TestCase):
+    def test_drops_paths_outside_themes_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "themes"
+            inside = base / "tokyo-night"
+            outside = Path(tmp) / "evil"
+            for d in (inside, outside):
+                (d / ".git").mkdir(parents=True)
+            # A symlink inside the themes dir pointing outside it resolves
+            # outside, so it must be dropped too.
+            link = base / "link"
+            link.symlink_to(outside, target_is_directory=True)
+            lines = [str(inside), str(outside), str(link), "/etc/passwd", ""]
+            with patch.object(check_updates, "THEMES_DIR", base), patch.object(
+                shutil, "which", return_value="/usr/bin/omarchy-theme-extras"
+            ), patch.object(check_updates, "command_lines", return_value=lines):
+                self.assertEqual(check_updates.theme_dirs(), [inside.resolve()])
 
 
 class TestCollectRepo(unittest.TestCase):

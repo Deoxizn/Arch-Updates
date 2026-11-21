@@ -5,7 +5,9 @@ Run: python3 tests/update_plugins_themes.test.py
 """
 import io
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -80,6 +82,29 @@ class TestBehindCounts(unittest.TestCase):
 
         with patch.object(upt, "run_git", side_effect=fake_run_git):
             self.assertEqual(upt.plugin_behind_count(Path("/tmp/plugin-a")), 0)
+
+
+class TestThemeDirs(unittest.TestCase):
+    def test_drops_paths_outside_themes_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "themes"
+            inside = base / "tokyo-night"
+            outside = Path(tmp) / "evil"
+            for d in (inside, outside):
+                (d / ".git").mkdir(parents=True)
+            # A symlink inside the themes dir pointing outside it resolves
+            # outside, so it must be dropped too.
+            link = base / "link"
+            link.symlink_to(outside, target_is_directory=True)
+            stdout = "\n".join([str(inside), str(outside), str(link), "/etc/passwd"])
+            with patch.object(upt, "THEMES_DIR", base), patch.object(
+                shutil, "which", return_value="/usr/bin/omarchy-theme-extras"
+            ), patch.object(upt, "run", return_value=fake_result(0, stdout)):
+                self.assertEqual(upt.theme_dirs(), [inside.resolve()])
+
+    def test_no_extras_binary_is_empty(self):
+        with patch.object(shutil, "which", return_value=None):
+            self.assertEqual(upt.theme_dirs(), [])
 
 
 class TestMain(unittest.TestCase):

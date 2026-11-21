@@ -30,6 +30,16 @@ GIT_UPDATE_TIMEOUT_S = 120
 PLUGIN_UPDATE_TIMEOUT_S = 180
 
 PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "plugins"
+THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "themes"
+
+
+def is_under(path, base):
+    """True when the resolved path sits under the resolved base dir."""
+    try:
+        Path(path).resolve().relative_to(Path(base).resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def run(command, timeout=30, env=None):
@@ -79,8 +89,11 @@ def theme_dirs():
         return []
     dirs = []
     for line in (result.stdout or "").splitlines():
-        path = Path(line.strip())
-        if path.is_dir() and (path / ".git").is_dir():
+        # omarchy-theme-extras only lists ~/.config/omarchy/themes/*, but
+        # trust the listing, not the source: resolve symlinks and drop
+        # anything outside the themes dir before git ever touches it.
+        path = Path(line.strip()).resolve()
+        if is_under(path, THEMES_DIR) and (path / ".git").is_dir():
             dirs.append(path)
     return dirs
 

@@ -53,6 +53,25 @@ CHECKUPDATES_RETRY_DELAY_S = 2
 GIT_FETCH_TIMEOUT_S = 15
 
 PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "plugins"
+THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "themes"
+
+# An upstream ref from `git rev-parse @{upstream}` (e.g. "origin/main").
+# Anything outside this shape is not a ref and must never reach rev-list.
+SAFE_GIT_REF_RE = re.compile(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")
+
+
+def is_safe_git_ref(ref):
+    """True when ref is a plain branch ref or a full SHA, not an injection."""
+    return bool(SAFE_GIT_REF_RE.fullmatch(ref)) and ".." not in ref
+
+
+def is_under(path, base):
+    """True when the resolved path sits under the resolved base dir."""
+    try:
+        Path(path).resolve().relative_to(Path(base).resolve())
+        return True
+    except ValueError:
+        return False
 
 # `checkupdates`, `pacman -Qu`, and `yay/paru -Qua` all print
 # "name oldver -> newver".
@@ -311,20 +330,22 @@ def theme_dirs():
     lines = command_lines(["omarchy-theme-extras"], timeout=30)
     dirs = []
     for line in lines:
-        path = Path(line.strip())
-        if path.is_dir() and (path / ".git").is_dir():
+        # omarchy-theme-extras only lists ~/.config/omarchy/themes/*, but
+        # trust the listing, not the source: resolve symlinks and drop
+        # anything outside the themes dir before git ever touches it.
+        path = Path(line.strip()).resolve()
+        if is_under(path, THEMES_DIR) and (path / ".git").is_dir():
             dirs.append(path)
     return dirs
 
 
 def theme_behind(dir_path):
     """A package entry for a theme behind its upstream, else None."""
-    fetch = run(["git", "-C", str(dir_path), "fetch", "--quiet"], timeout=30)
+    fetch = run_git(["fetch", "--quiet"], dir_path, timeout=30)
     if fetch is None or fetch.returncode != 0:
         return None
-    behind = run(
-        ["git", "-C", str(dir_path), "rev-list", "--count", "HEAD..@{upstream}"],
-        timeout=15,
+    behind = run_git(
+        ["rev-list", "--count", "HEAD..@{upstream}"], dir_path, timeout=15
     )
     count = (behind.stdout or "").strip() if behind is not None and behind.returncode == 0 else ""
     if not count.isdigit() or count == "0":
@@ -349,16 +370,22 @@ def omarchy_checkout_behind():
     checkout = Path(path)
     if not checkout.is_dir() or not (checkout / ".git").is_dir():
         return None
-    upstream = run(
-        ["git", "-C", str(checkout), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+    upstream = run_git(
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        checkout,
         timeout=15,
     )
     if upstream is None or upstream.returncode != 0 or not (upstream.stdout or "").strip():
         return None
     ref = (upstream.stdout or "").strip()
-    run(["git", "-C", str(checkout), "fetch", "--quiet"], timeout=10)
-    behind = run(
-        ["git", "-C", str(checkout), "rev-list", "--count", "HEAD..%s" % ref],
+    # rev-parse output goes straight into rev-list below, so reject
+    # anything that is not a plain ref or a full SHA first.
+    if not is_safe_git_ref(ref):
+        return None
+    run_git(["fetch", "--quiet"], checkout, timeout=10)
+    behind = run_git(
+        ["rev-list", "--count", "HEAD..%s" % ref],
+        checkout,
         timeout=15,
     )
     count = (behind.stdout or "").strip() if behind is not None and behind.returncode == 0 else ""
