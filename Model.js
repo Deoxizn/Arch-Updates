@@ -42,17 +42,23 @@ function boolValue(value, fallback) {
 // guard and skips the transcript, snapshot, keyrings, migrations, and
 // post-update hooks, so it is never an update action here, not even with
 // the direct-pacman override env var set.
+// Commands are bare, with no wait-for-keypress suffix: the widget runs
+// them through omarchy-launch-floating-terminal-with-presentation, whose
+// wrapper shows the Omarchy logo, runs the command, then shows Done and
+// waits for a keypress itself. (The 2.0.0 read-prompt suffix was a
+// workaround for plain xdg-terminal-exec closing instantly on success;
+// with the wrapper it would prompt twice.)
 function updateCommandFor(repo) {
   var id = String((repo && repo.id) || "")
-  if (id === "system") return "omarchy update; echo; read -n 1 -s -r -p 'Done. Press any key to close'"
+  if (id === "system") return "omarchy update"
   if (id === "aur") {
     var helper = String((repo && repo.updater) || "")
     if (AUR_HELPERS.indexOf(helper) === -1) return ""
-    return helper + " -Sua; echo; read -n 1 -s -r -p 'Done. Press any key to close'"
+    return helper + " -Sua"
   }
-  if (id === "flatpak") return "flatpak update; echo; read -n 1 -s -r -p 'Done. Press any key to close'"
-  if (id === "plugins") return "omarchy plugin update --yes; omarchy theme update; echo; read -n 1 -s -r -p 'Done. Press any key to close'"
-  if (id === "mise") return "MISE_MINIMUM_RELEASE_AGE=0 mise up; echo; read -n 1 -s -r -p 'Done. Press any key to close'"
+  if (id === "flatpak") return "flatpak update"
+  if (id === "plugins") return "omarchy plugin update --yes; omarchy theme update"
+  if (id === "mise") return "MISE_MINIMUM_RELEASE_AGE=0 mise up"
   return ""
 }
 

@@ -39,17 +39,20 @@ test("the old bash scanner is gone; the Python scanner is the only checker", () 
 test("the System section updates with omarchy update, never bare pacman", () => {
   const model = read("Model.js")
   // The system repo's only update command is the managed pipeline.
-  assert.match(model, /if \(id === "system"\) return "omarchy update; echo; read/)
+  // Commands are bare: the presentation wrapper waits for a keypress
+  // itself, so no read-prompt suffix.
+  assert.match(model, /if \(id === "system"\) return "omarchy update"/)
   // No bare pacman anywhere in the command builder: not as a command, and
   // not even smuggled past the guard with OMARCHY_ALLOW_DIRECT_PACMAN.
   assert.doesNotMatch(model, /pacman -Syu/)
   assert.doesNotMatch(model, /OMARCHY_ALLOW_DIRECT_PACMAN/)
+  assert.doesNotMatch(model, /read -n 1/)
   // The other sources keep their own safe updater.
   assert.match(model, /if \(id === "aur"\)/)
-  assert.match(model, /-Sua; echo; read/)
-  assert.match(model, /if \(id === "flatpak"\) return "flatpak update; echo; read/)
-  assert.match(model, /if \(id === "plugins"\) return "omarchy plugin update --yes; omarchy theme update; echo; read/)
-  assert.match(model, /if \(id === "mise"\) return "MISE_MINIMUM_RELEASE_AGE=0 mise up; echo; read/)
+  assert.match(model, /return helper \+ " -Sua"/)
+  assert.match(model, /if \(id === "flatpak"\) return "flatpak update"/)
+  assert.match(model, /if \(id === "plugins"\) return "omarchy plugin update --yes; omarchy theme update"/)
+  assert.match(model, /if \(id === "mise"\) return "MISE_MINIMUM_RELEASE_AGE=0 mise up"/)
   // The AUR helper is a fixed enum: an unknown helper yields no command.
   assert.match(model, /AUR_HELPERS/)
   assert.match(model, /if \(AUR_HELPERS\.indexOf\(helper\) === -1\) return ""/)
@@ -93,22 +96,20 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   assert.match(widget, /args\.push\("--no-flatpak"\)/)
   assert.match(widget, /args\.push\("--no-mise"\)/)
   assert.match(widget, /args\.push\("--no-plugins"\)/)
-  // Updates open a terminal (dizziee's approach) and rescan after.
-  // The launch is a Process with an argv array, not a shell-quoted
-  // string through bar.run: the quoted string never reached a terminal.
-  // The launcher is xdg-terminal-exec, not omarchy-launch-terminal:
-  // the wrapper (setsid uwsm-app) dies silently from the shell process,
-  // so both the bar.run string and a Process argv with it failed the
-  // same way, no terminal and a stuck "…".
-  assert.match(widget, /launchProc\.command = \["xdg-terminal-exec", "bash", "-c", cmd\]/)
-  assert.match(widget, /launchProc\.running = true/)
-  assert.doesNotMatch(widget, /shellQuote/)
-  assert.doesNotMatch(widget, /launchProc\.command = \["omarchy-launch-terminal"/)
-  // A failed launch clears the pending "…" instead of leaving it stuck.
-  // A terminal that opened and closed also ends the fast poll.
-  assert.match(widget, /id: launchProc[\s\S]*?onExited: function\(exitCode\) \{[\s\S]*?if \(exitCode !== 0\) \{[\s\S]*?root\.stopFastPoll\(\)/)
-  assert.match(widget, /launchStartedAt/)
-  assert.match(widget, /Date\.now\(\) - root\.launchStartedAt > 5000/)
+  // Updates open a terminal through bar.run, the 1.x left-click path:
+  // a plain string to the bar's run (Util.execDetached, shell), with
+  // Omarchy's presentation wrapper as the launcher. That combination
+  // worked in 1.x and still works for the menu's right-click. The 2.0.0
+  // QML Process launches never opened a terminal, and plain
+  // xdg-terminal-exec closes instantly on success, which is why the
+  // wrapper exists: logo, update, Done, wait for a keypress.
+  assert.match(widget, /root\.bar\.run\("omarchy-launch-floating-terminal-with-presentation " \+ root\.shellQuote\(cmd\)\)/)
+  assert.match(widget, /function shellQuote\(value\)/)
+  assert.doesNotMatch(widget, /id: launchProc/)
+  assert.doesNotMatch(widget, /launchStartedAt/)
+  assert.doesNotMatch(widget, /launchProc\.command/)
+  // The fast poll ends when a rescan shows the pending repo at zero.
+  assert.match(widget, /root\.repos\[i\]\.id === root\.pendingRepo && root\.repos\[i\]\.count === 0/)
   assert.match(widget, /Model\.updateCommandFor\(repo\)/)
   assert.match(widget, /fastPollTimer/)
   // The standalone settings window, one per bar surface.
