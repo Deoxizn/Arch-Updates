@@ -285,21 +285,35 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
-  readonly property bool panelOpened: panelLoader.item ? panelLoader.item.opened === true : false
+  // Panel contract, same as the clock: the bar-widget root exposes
+  // open/close/opened, which is what Bar.findPanelWidget needs for
+  // shell.summon/hide/toggle routing — and what KeyboardPanel needs for
+  // its outside-click dismiss. KeyboardPanel.close() calls owner.close()
+  // when the owner has one; without a close() on this widget it fell
+  // through to assigning its own `open = false` directly, which broke
+  // the `open: root.opened` binding in Panel.qml: panelController.open
+  // stayed true, so the next click closed a panel that was already
+  // hidden, and the one after that opened nothing, because the
+  // KeyboardPanel's open was no longer driven by root.opened. The panel
+  // opened once and never again after a click-outside dismiss. With
+  // close() here, the dismiss goes through panelController.hide(), the
+  // opened flag resets, the binding stays intact, and the panel reopens
+  // after any close.
+  readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
-  function openPanel() {
+  function open() {
     if (panelLoader.item) panelLoader.item.open()
     root.runCheck()
   }
 
-  function closePanel() {
+  function close() {
     if (panelLoader.item) panelLoader.item.close()
   }
 
   function togglePanel() {
     if (!panelLoader.item) return
-    if (panelLoader.item.opened) panelLoader.item.close()
-    else { panelLoader.item.open(); root.runCheck() }
+    if (panelLoader.item.opened) root.close()
+    else root.open()
   }
 
   implicitWidth: badge.implicitWidth

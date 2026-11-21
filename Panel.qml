@@ -152,6 +152,19 @@ Panel {
             verticalPadding: Style.spacing.controlPaddingY
             onClicked: { if (hostWidget) hostWidget.runCheck() }
           }
+
+          // Explicit close, upper right. Escape and click-outside also
+          // close it, but the X is the control you can see.
+          Button {
+            text: "\u00d7"
+            foreground: root.fg
+            tooltipText: "Close"
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: root.close()
+          }
         }
 
         PanelSeparator {
@@ -359,6 +372,24 @@ Panel {
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
           horizontalAlignment: Text.AlignHCenter
+        }
+
+        RowLayout {
+          Layout.fillWidth: true
+          Layout.topMargin: Style.space(4)
+
+          Item { Layout.fillWidth: true }
+
+          Button {
+            text: "Close"
+            foreground: root.fg
+            tooltipText: "Close this panel"
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            horizontalPadding: Style.spacing.controlPaddingX
+            verticalPadding: Style.spacing.controlPaddingY
+            onClicked: root.close()
+          }
         }
       }
     }

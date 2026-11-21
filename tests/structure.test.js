@@ -146,6 +146,38 @@ test("the standalone settings window mirrors the System tab", () => {
   assert.match(settings, /sequence: "Escape"/)
 })
 
+test("the panel reopens after any close: widget owns the panel contract and the panel has explicit close controls", () => {
+  const widget = read("BarWidget.qml")
+  // The bar-widget panel contract, same as the clock: Bar.findPanelWidget
+  // needs open/close/opened on the widget root, and KeyboardPanel's
+  // outside-click dismiss calls owner.close() when the owner has one.
+  // Without close() on the widget, the dismiss assigned the KeyboardPanel's
+  // own `open = false` directly, breaking the `open: root.opened` binding:
+  // panelController.open stayed true, so the panel opened once and never
+  // again after a click-outside dismiss.
+  assert.match(widget, /readonly property bool opened: panelLoader\.item \? panelLoader\.item\.opened === true : false/)
+  assert.match(widget, /function open\(\) \{/)
+  assert.match(widget, /function close\(\) \{/)
+  assert.match(widget, /if \(panelLoader\.item\) panelLoader\.item\.close\(\)/)
+  // togglePanel goes through the contract functions: one open path.
+  assert.match(widget, /if \(panelLoader\.item\.opened\) root\.close\(\)/)
+  assert.match(widget, /else root\.open\(\)/)
+  // The old parallel names are gone.
+  assert.doesNotMatch(widget, /function openPanel\(\)/)
+  assert.doesNotMatch(widget, /function closePanel\(\)/)
+  assert.doesNotMatch(widget, /panelOpened/)
+
+  const panel = read("Panel.qml")
+  // The KeyboardPanel still binds open to root.opened and hands the widget
+  // over as owner, so the dismiss routes through the widget's close().
+  assert.match(panel, /owner: root\.barIdentity/)
+  assert.match(panel, /open: root\.opened/)
+  // Explicit close controls, both on the clean close path.
+  assert.match(panel, /text: "\\u00d7"/)
+  assert.match(panel, /text: "Close"/)
+  assert.match(panel, /onClicked: root\.close\(\)/)
+})
+
 test("the scanner emits the combined system repo and per-source flags", () => {
   const scanner = read("scripts/check_updates.py")
   assert.match(scanner, /"system"/)
