@@ -5,24 +5,23 @@ import qs.Ui
 import "Model.js" as Model
 
 // Arch Updates 2.0.0: system-update indicator in the dizziee model, with
-// the Omarchy and Arch updates combined into one section. Hover the pill
+// the Hexciri and Arch updates combined into one section. Hover the pill
 // and the tooltip lists every pending package vertically, per category,
 // with its old -> new version, Noctalia-style. Left click opens a panel
 // listing the pending packages per source with an update button each.
 // Right click opens the standalone settings window. Middle click forces
 // a refresh.
 //
-// The combined "Omarchy + Arch" section is the whole point of 2.0.0: the
-// Arch update button in dizziee runs a bare pacman system upgrade (with
-// the direct-pacman override env var set to get past Omarchy's guard),
+// The combined "Hexciri + Arch" section is the whole point of 2.0.0: the
+// Arch update button in dizziee runs a bare pacman system upgrade,
 // which bypasses the managed pipeline and, as its README says, a bare
-// arch update is useless and can be harmful. There is one update action
-// for the combined section and it runs `omarchy update`, the full managed
-// pipeline (transcript, snapshot, keyrings, migrations, post-update
-// hooks). A bare pacman system upgrade is never an update action here,
-// not even with the override env var set. The other sources keep their
-// own safe updater (AUR helper, flatpak update, mise up, omarchy plugin
-// update).
+// arch update is useless and can be harmful. (Hexciri's pacman guard is
+// a no-op, so nothing stops a bare upgrade except this widget refusing
+// to offer one.) There is one update action for the combined section
+// and it runs `hexciri update`, the full managed pipeline (transcript,
+// keyrings, migrations, post-update hooks). A bare pacman system upgrade
+// is never an update action here. The other sources keep their own safe
+// updater (AUR helper, flatpak update, mise up, hexciri plugin update).
 //
 // Nerd Font icons as QML escapes (ASCII, so they survive every transport
 // layer): no updates nf-oct-package U+F487, updates nf-md-package_variant
@@ -91,7 +90,7 @@ BarWidget {
   property string detailText: ""
   property string lastCacheText: ""
 
-  // The combined Omarchy + Arch repo, for the tooltip and the panel.
+  // The combined Hexciri + Arch repo, for the tooltip and the panel.
   readonly property var systemRepo: {
     for (var i = 0; i < root.repos.length; i++) {
       if (root.repos[i].id === "system") return root.repos[i]
@@ -101,7 +100,7 @@ BarWidget {
 
   readonly property bool hasUpdates: root.totalCount > 0
 
-  // `omarchy bar set` stores a bare value as a JSON string unless --json
+  // `hexciri bar set` stores a bare value as a JSON string unless --json
   // is used, so a boolean read back from shell.json can be "false".
   // Coerce it instead of treating every non-false value as true.
   function boolValue(value, fallback) {
@@ -135,15 +134,15 @@ BarWidget {
 
   // Last-good scan result on disk: the bar renders it instantly at shell
   // start with zero spawns, and the first live scan replaces it. The file
-  // lives in ~/.cache/omarchy, which already exists.
+  // lives in ~/.cache/hexciri, which already exists.
   readonly property string cachePath: {
     var base = Quickshell.env("XDG_CACHE_HOME")
     if (!base) base = Quickshell.env("HOME") + "/.cache"
-    return base + "/omarchy/pizza.dirty.arch-updates.json"
+    return base + "/hexciri/pizza.dirty.arch-updates.json"
   }
 
-  readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/scripts/check_updates.py"
-  readonly property string updateScriptPath: (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/pizza.dirty.arch-updates/scripts/update_plugins_themes.py"
+  readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.config/hexciri/plugins/pizza.dirty.arch-updates/scripts/check_updates.py"
+  readonly property string updateScriptPath: (Quickshell.env("HOME") || "") + "/.config/hexciri/plugins/pizza.dirty.arch-updates/scripts/update_plugins_themes.py"
 
   function runCheck() {
     if (checkProc.running) return
@@ -228,19 +227,20 @@ BarWidget {
   // from the repo id (and, for AUR, the helper as a fixed enum).
   //
   // The launch is the 1.x left-click path, restored verbatim: a plain
-  // string through bar.run (Util.execDetached, shell), with Omarchy's
+  // string through bar.run (Util.execDetached, shell), with Hexciri's
   // presentation wrapper as the launcher. That is the combination that
-  // worked: 1.x ran `omarchy-launch-floating-terminal-with-presentation
-  // omarchy update` on left-click, and the menu still opens a terminal
-  // through bar.run today. The 2.0.0 panel broke it twice: first a
-  // shell-quoted string to omarchy-launch-terminal through bar.run, then
-  // a QML Process argv to omarchy-launch-terminal, then to plain
-  // xdg-terminal-exec. The Process launches never opened a terminal at
-  // all, and plain xdg-terminal-exec was already documented in 1.x as
-  // closing instantly on success (it looked like a crash at the AUR
-  // stage), which is why the presentation wrapper exists: it shows the
-  // Omarchy logo, runs the command, then shows Done and waits for a
-  // keypress, so the terminal stays open. (Second-window theory checked
+  // worked: 1.x on Omarchy ran
+  // `omarchy-launch-floating-terminal-with-presentation omarchy update`
+  // on left-click, and the menu still opens a terminal through bar.run
+  // today. The 2.0.0 panel broke it twice: first a shell-quoted string
+  // to omarchy-launch-terminal through bar.run, then a QML Process argv
+  // to omarchy-launch-terminal, then to plain xdg-terminal-exec. The
+  // Process launches never opened a terminal at all, and plain
+  // xdg-terminal-exec was already documented in 1.x as closing instantly
+  // on success (it looked like a crash at the AUR stage), which is why
+  // the presentation wrapper exists: it shows the Hexciri logo, runs the
+  // command, then shows Done and waits for a keypress, so the terminal
+  // stays open. (Second-window theory checked
   // and ruled out along the way: the launch lives in this main widget,
   // the panel only calls hostWidget.updateRepo(id).)
   //
@@ -270,7 +270,7 @@ BarWidget {
     root.fastPollActive = true
     fastPollTimer.interval = 10000
     fastPollTimer.restart()
-    if (root.bar) root.bar.run("omarchy-launch-floating-terminal-with-presentation " + root.shellQuote(cmd))
+    if (root.bar) root.bar.run("hexciri-launch-floating-terminal-with-presentation " + root.shellQuote(cmd))
   }
 
   property string pendingRepo: ""

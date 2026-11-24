@@ -11,11 +11,13 @@ import "Model.js" as Model
 // button each, opened by left-clicking the badge. BarWidget.qml owns the
 // scan results and hands this panel the badge to anchor against.
 //
-// The combined "Omarchy + Arch" section has one update action and it runs
-// `omarchy update`, the full managed pipeline. A bare `pacman -Syu` is
-// never an update action here, not even with OMARCHY_ALLOW_DIRECT_PACMAN=1.
+// The combined "Hexciri + Arch" section has one update action and it runs
+// `hexciri update`, the full managed pipeline. A bare `pacman -Syu` is
+// never an update action here. (Hexciri has no direct-pacman override:
+// its pacman guard is a no-op, so the managed pipeline is the only
+// update action by this widget's choice, not by a guard.)
 // The other sources keep their own safe updater (AUR helper, flatpak
-// update, mise up, omarchy plugin update). Update commands are rebuilt
+// update, mise up, hexciri plugin update). Update commands are rebuilt
 // here from the repo id (Model.updateCommandFor), never read back from
 // the scan output, which is user-writable.
 //
@@ -243,7 +245,7 @@ Panel {
                       text: {
                         if (repoCard.count > 0) {
                           var label = repoCard.count === 1 ? "1 update" : repoCard.count + " updates"
-                          if (modelData.id === "system" && modelData.omarchyPending === true) label += " · Omarchy update available"
+                          if (modelData.id === "system" && modelData.hexciriPending === true) label += " · Hexciri update available"
                           return label
                         }
                         return "Up to date"
@@ -292,7 +294,7 @@ Panel {
               }
 
               // Expanded package list. Versioned entries show old → new;
-              // git entries (plugins/themes, and a dev Omarchy checkout)
+              // git entries (plugins/themes, and a dev Hexciri checkout)
               // show the commits behind instead. The list is capped and
               // scrolls so a large batch can't overflow the panel.
               Flickable {

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Update only the Omarchy shell plugins and git themes behind upstream.
+"""Update only the Hexciri shell plugins and git themes behind upstream.
 
-Replaces the blanket `omarchy plugin update --yes; omarchy theme update`,
+Replaces the blanket `hexciri plugin update --yes; hexciri theme update`,
 which touches every plugin and pulls every theme on each run. This script
 checks each checkout first (fetch + behind count) and only updates the
 ones that actually have something to pull, so up-to-date plugins and
 themes are left alone.
 
-Plugins update through `omarchy plugin update <id> --yes`, which reuses
-Omarchy's own validation and rollback. Themes update with a
+Plugins update through `hexciri plugin update <id> --yes`, which reuses
+Hexciri's own validation and rollback. Themes update with a
 fast-forward-only pull, so a theme with local changes fails cleanly
 instead of merging.
 
@@ -29,8 +29,8 @@ GIT_FETCH_TIMEOUT_S = 30
 GIT_UPDATE_TIMEOUT_S = 120
 PLUGIN_UPDATE_TIMEOUT_S = 180
 
-PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "plugins"
-THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "themes"
+PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "hexciri" / "plugins"
+THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "hexciri" / "themes"
 
 
 def is_under(path, base):
@@ -71,7 +71,7 @@ def run_git(args, cwd, timeout=GIT_FETCH_TIMEOUT_S):
 
 
 def git_plugin_dirs():
-    """Installed Omarchy shell plugins that are git checkouts."""
+    """Installed Hexciri shell plugins that are git checkouts."""
     try:
         if not PLUGINS_DIR.is_dir():
             return []
@@ -81,15 +81,15 @@ def git_plugin_dirs():
 
 
 def theme_dirs():
-    """Git theme checkouts from omarchy-theme-extras."""
-    if shutil.which("omarchy-theme-extras") is None:
+    """Git theme checkouts from hexciri-theme-extras."""
+    if shutil.which("hexciri-theme-extras") is None:
         return []
-    result = run(["omarchy-theme-extras"], timeout=30)
+    result = run(["hexciri-theme-extras"], timeout=30)
     if result is None or result.returncode != 0:
         return []
     dirs = []
     for line in (result.stdout or "").splitlines():
-        # omarchy-theme-extras only lists ~/.config/omarchy/themes/*, but
+        # hexciri-theme-extras only lists ~/.config/hexciri/themes/*, but
         # trust the listing, not the source: resolve symlinks and drop
         # anything outside the themes dir before git ever touches it.
         path = Path(line.strip()).resolve()
@@ -122,7 +122,7 @@ def theme_behind_count(dir_path):
 def plugin_behind_count(dir_path):
     """Commits dir_path is behind origin HEAD, or None if unknown.
 
-    Mirrors the scanner's plugin_behind and `omarchy-plugin-update`:
+    Mirrors the scanner's plugin_behind and `hexciri-plugin-update`:
     fetch origin HEAD, then count the commits FETCH_HEAD has that HEAD
     lacks. A checkout only ahead of origin (local work, a feature
     branch) counts as 0: the updater has nothing to pull for it.
@@ -160,9 +160,9 @@ def update_theme(dir_path):
 
 
 def update_plugin(dir_path):
-    """Update one behind plugin through Omarchy. True on success."""
+    """Update one behind plugin through Hexciri. True on success."""
     result = run(
-        ["omarchy", "plugin", "update", dir_path.name, "--yes"],
+        ["hexciri", "plugin", "update", dir_path.name, "--yes"],
         timeout=PLUGIN_UPDATE_TIMEOUT_S,
     )
     return result is not None and result.returncode == 0

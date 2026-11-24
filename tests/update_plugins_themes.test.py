@@ -98,7 +98,7 @@ class TestThemeDirs(unittest.TestCase):
             link.symlink_to(outside, target_is_directory=True)
             stdout = "\n".join([str(inside), str(outside), str(link), "/etc/passwd"])
             with patch.object(upt, "THEMES_DIR", base), patch.object(
-                shutil, "which", return_value="/usr/bin/omarchy-theme-extras"
+                shutil, "which", return_value="/usr/bin/hexciri-theme-extras"
             ), patch.object(upt, "run", return_value=fake_result(0, stdout)):
                 self.assertEqual(upt.theme_dirs(), [inside.resolve()])
 

@@ -4,22 +4,22 @@
 Sources: Arch repo (checkupdates), AUR (yay/paru -Qua), Flatpak
 (flatpak remote-ls --updates), mise (mise outdated --json), git shell
 plugins and git themes. Check-only: nothing here installs anything.
-Installs go through `omarchy update` (system, AUR, mise) and, separately,
-`omarchy plugin update` / `omarchy theme update` for shell plugins and
+Installs go through `hexciri update` (system, AUR, mise) and, separately,
+`hexciri plugin update` / `hexciri theme update` for shell plugins and
 themes.
 
 Output is one JSON object on stdout:
   {"repos": [{"id", "name", "count", "installed", "packages", ...}], "total": N}
 Each package is {"name", "from", "to"} for a versioned update, or
 {"name", "behind"} for a git checkout (plugins/themes have no version).
-The "system" repo combines the Arch repo packages with the Omarchy
-release itself: its count is the repo count, and "omarchyPending" is true
-when the omarchy/omarchy-dev package is among them or a dev checkout of
-Omarchy (OMARCHY_PATH) is behind its upstream. There is only one update
-action for that repo and it runs `omarchy update`, never a bare pacman
-system upgrade: a bare arch update bypasses Omarchy's guard and skips the
-managed pipeline (transcript, snapshot, keyrings, migrations, post-update
-hooks).
+The "system" repo combines the Arch repo packages with Hexciri itself:
+its count is the repo count, plus a hexciri-dev-checkout entry when a
+Hexciri checkout is behind its upstream, and "hexciriPending" is true
+when that entry is present. (Hexciri is not a pacman package, so no repo
+package can ever flag it; the checkout check is the only signal.) There
+is only one update action for that repo and it runs `hexciri update`,
+never a bare pacman system upgrade: a bare arch update bypasses the
+managed pipeline (transcript, keyrings, migrations, post-update hooks).
 
 Per-source toggles (from the widget's settings, passed as flags):
   --no-aur --no-flatpak --no-mise --no-plugins
@@ -45,15 +45,16 @@ MAX_PACKAGES = 1000
 MAX_NAME_LEN = 200
 MAX_VER_LEN = 100
 
-# Packages that carry the Omarchy release itself, and where the packaged
-# build lives (any other OMARCHY_PATH is a dev checkout).
-OMARCHY_PACKAGES = ("omarchy", "omarchy-dev")
-OMARCHY_SYSTEM_PATH = "/usr/share/omarchy"
+# Where the packaged Hexciri build lives. Any other HEXCIRI_PATH is a dev
+# checkout. (There is no Hexciri pacman package: unlike Omarchy's
+# ("omarchy", "omarchy-dev"), no repo package can ever carry the Hexciri
+# release itself, so the checkout check below is the only pending signal.)
+HEXCIRI_SYSTEM_PATH = "/usr/share/hexciri"
 CHECKUPDATES_RETRY_DELAY_S = 2
 GIT_FETCH_TIMEOUT_S = 15
 
-PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "plugins"
-THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "omarchy" / "themes"
+PLUGINS_DIR = Path(os.path.expanduser("~")) / ".config" / "hexciri" / "plugins"
+THEMES_DIR = Path(os.path.expanduser("~")) / ".config" / "hexciri" / "themes"
 
 # An upstream ref from `git rev-parse @{upstream}` (e.g. "origin/main").
 # Anything outside this shape is not a ref and must never reach rev-list.
@@ -227,7 +228,7 @@ def check_mise(binary):
     """mise dev-tool updates from `mise outdated --json`."""
     if binary is None:
         return []
-    # Mirror what `omarchy update` installs: omarchy-update-mise runs
+    # Mirror what `hexciri update` installs: hexciri-update-mise runs
     # `MISE_MINIMUM_RELEASE_AGE=0 mise up`, so drop mise's release cooldown
     # to count the versions that command would actually pull in. Fall back
     # to the plain query on mise builds that reject the override.
@@ -241,8 +242,8 @@ def check_mise(binary):
         info = info if isinstance(info, dict) else {}
         current = str(info.get("current") or "")
         latest = str(info.get("latest") or info.get("requested") or "")
-        # Omarchy 4.5 declares lazy system tools in
-        # /etc/mise/conf.d/omarchy-tools.toml. `mise outdated --json`
+        # Hexciri declares lazy system tools in
+        # /etc/mise/conf.d/hexciri-tools.toml. `mise outdated --json`
         # reports those not-yet-installed tools with current=null, but
         # `mise up` leaves missing lazy tools alone (they install on first
         # use). Skip them so the count matches what `mise up` pulls in.
@@ -256,7 +257,7 @@ def check_mise(binary):
 
 
 def git_plugin_dirs():
-    """Installed Omarchy shell plugins that are git checkouts."""
+    """Installed Hexciri shell plugins that are git checkouts."""
     try:
         if not PLUGINS_DIR.is_dir():
             return []
@@ -287,7 +288,7 @@ def run_git(args, cwd, timeout=GIT_FETCH_TIMEOUT_S):
 def plugin_behind(dir_path):
     """A package entry for a plugin behind origin, else None.
 
-    Mirrors `omarchy-plugin-update`: fetch origin HEAD, then count the
+    Mirrors `hexciri-plugin-update`: fetch origin HEAD, then count the
     commits FETCH_HEAD has that HEAD lacks. Offline plugins, and checkouts
     only ahead of origin (local work, a feature branch), are skipped: the
     updater has nothing to pull for them.
@@ -324,13 +325,13 @@ def check_plugins(dirs):
 
 
 def theme_dirs():
-    """Git theme checkouts from omarchy-theme-extras."""
-    if shutil.which("omarchy-theme-extras") is None:
+    """Git theme checkouts from hexciri-theme-extras."""
+    if shutil.which("hexciri-theme-extras") is None:
         return []
-    lines = command_lines(["omarchy-theme-extras"], timeout=30)
+    lines = command_lines(["hexciri-theme-extras"], timeout=30)
     dirs = []
     for line in lines:
-        # omarchy-theme-extras only lists ~/.config/omarchy/themes/*, but
+        # hexciri-theme-extras only lists ~/.config/hexciri/themes/*, but
         # trust the listing, not the source: resolve symlinks and drop
         # anything outside the themes dir before git ever touches it.
         path = Path(line.strip()).resolve()
@@ -362,12 +363,8 @@ def check_themes(dirs):
     return [entry for entry in results if entry is not None]
 
 
-def omarchy_checkout_behind():
-    """A package entry for a dev checkout of Omarchy behind upstream, else None."""
-    path = os.environ.get("OMARCHY_PATH", "").rstrip("/")
-    if not path or path == OMARCHY_SYSTEM_PATH:
-        return None
-    checkout = Path(path)
+def _checkout_behind(checkout):
+    """A behind entry for one Hexciri checkout dir, else None."""
     if not checkout.is_dir() or not (checkout / ".git").is_dir():
         return None
     upstream = run_git(
@@ -391,7 +388,30 @@ def omarchy_checkout_behind():
     count = (behind.stdout or "").strip() if behind is not None and behind.returncode == 0 else ""
     if not count.isdigit() or count == "0":
         return None
-    return {"name": "omarchy-dev-checkout", "behind": int(count)}
+    return {"name": "hexciri-dev-checkout", "behind": int(count)}
+
+
+def hexciri_checkout_behind():
+    """A package entry for a Hexciri checkout behind upstream, else None.
+
+    Two checkouts can carry Hexciri itself, in priority order:
+    1. $HEXCIRI_PATH when it points at a git checkout other than the
+       packaged build at HEXCIRI_SYSTEM_PATH (/usr/share/hexciri): the
+       dev-checkout case, the exact analog of Omarchy's OMARCHY_PATH.
+    2. ~/.local/opt/hexciri-nyx, the installer-repo clone that
+       `hexciri update` maintains (clone once, then fetch/pull). On a
+       normal install this is the checkout that is actually behind when
+       a Hexciri update is out, so it is the live pending signal.
+    Either one behind upstream reports as hexciri-dev-checkout.
+    """
+    path = os.environ.get("HEXCIRI_PATH", "").rstrip("/")
+    if path and path != HEXCIRI_SYSTEM_PATH:
+        entry = _checkout_behind(Path(path))
+        if entry is not None:
+            return entry
+    return _checkout_behind(
+        Path(os.path.expanduser("~")) / ".local" / "opt" / "hexciri-nyx"
+    )
 
 
 def collect_repo(repo_id, name, packages, installed, **extra):
@@ -424,7 +444,7 @@ def main(argv=None):
     aur_updates = [] if args.no_aur else check_aur(helper)
     flatpak_updates = [] if args.no_flatpak else check_flatpak()
     mise_updates = [] if args.no_mise else check_mise(mise)
-    checkout = omarchy_checkout_behind()
+    checkout = hexciri_checkout_behind()
     if args.no_plugins:
         plugin_updates = []
         theme_updates = []
@@ -432,13 +452,14 @@ def main(argv=None):
         plugin_updates = check_plugins(plugin_dirs)
         theme_updates = check_themes(themes)
 
-    # The combined Omarchy + Arch repo: the repo packages, plus the dev
-    # checkout behind entry when there is one. The omarchy package itself
-    # rides inside the repo list when the packaged build has an update.
+    # The combined Hexciri + Arch repo: the repo packages, plus the
+    # Hexciri checkout behind entry when there is one. No Hexciri package
+    # rides inside the repo list (Hexciri is not a pacman package), so
+    # the checkout entry is the only Hexciri-pending signal.
     system_packages = list(repo_updates)
     if checkout is not None:
         system_packages.insert(0, checkout)
-    omarchy_pending = any(p["name"] in OMARCHY_PACKAGES for p in repo_updates) or checkout is not None
+    hexciri_pending = checkout is not None
 
     repos = [
         collect_repo(
@@ -446,7 +467,7 @@ def main(argv=None):
             "System",
             system_packages,
             True,
-            omarchyPending=omarchy_pending,
+            hexciriPending=hexciri_pending,
         ),
         collect_repo(
             "aur",

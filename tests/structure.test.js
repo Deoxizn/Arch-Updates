@@ -37,14 +37,14 @@ test("the old bash scanner is gone; the Python scanner is the only checker", () 
   assert.ok(exists("SystemSettings.qml"), "SystemSettings.qml missing")
 })
 
-test("the System section updates with omarchy update, never bare pacman", () => {
+test("the System section updates with hexciri update, never bare pacman", () => {
   const model = read("Model.js")
   // The system repo's only update command is the managed pipeline.
   // Commands are bare: the presentation wrapper waits for a keypress
   // itself, so no read-prompt suffix.
-  assert.match(model, /if \(id === "system"\) return "omarchy update"/)
+  assert.match(model, /if \(id === "system"\) return "hexciri update"/)
   // No bare pacman anywhere in the command builder: not as a command, and
-  // not even smuggled past the guard with OMARCHY_ALLOW_DIRECT_PACMAN.
+  // Hexciri has no direct-pacman override env var; its guard is a no-op.
   assert.doesNotMatch(model, /pacman -Syu/)
   assert.doesNotMatch(model, /OMARCHY_ALLOW_DIRECT_PACMAN/)
   assert.doesNotMatch(model, /read -n 1/)
@@ -53,11 +53,11 @@ test("the System section updates with omarchy update, never bare pacman", () => 
   assert.match(model, /return helper \+ " -Sua"/)
   assert.match(model, /if \(id === "flatpak"\) return "flatpak update"/)
   // Plugins & Themes update selectively: the widget passes the helper
-  // script path, and the blanket `omarchy plugin update --yes;
-  // omarchy theme update` is only the fallback when no path is given.
+  // script path, and the blanket `hexciri plugin update --yes;
+  // hexciri theme update` is only the fallback when no path is given.
   assert.match(model, /if \(id === "plugins"\) \{/)
   assert.match(model, /return "python3 " \+ script/)
-  assert.match(model, /return "omarchy plugin update --yes; omarchy theme update"/)
+  assert.match(model, /return "hexciri plugin update --yes; hexciri theme update"/)
   assert.match(model, /if \(id === "mise"\) return "MISE_MINIMUM_RELEASE_AGE=0 mise up"/)
   // The AUR helper is a fixed enum: an unknown helper yields no command.
   assert.match(model, /AUR_HELPERS/)
@@ -104,12 +104,12 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   assert.match(widget, /args\.push\("--no-plugins"\)/)
   // Updates open a terminal through bar.run, the 1.x left-click path:
   // a plain string to the bar's run (Util.execDetached, shell), with
-  // Omarchy's presentation wrapper as the launcher. That combination
+  // Hexciri's presentation wrapper as the launcher. That combination
   // worked in 1.x and still works for the menu's right-click. The 2.0.0
   // QML Process launches never opened a terminal, and plain
   // xdg-terminal-exec closes instantly on success, which is why the
   // wrapper exists: logo, update, Done, wait for a keypress.
-  assert.match(widget, /root\.bar\.run\("omarchy-launch-floating-terminal-with-presentation " \+ root\.shellQuote\(cmd\)\)/)
+  assert.match(widget, /root\.bar\.run\("hexciri-launch-floating-terminal-with-presentation " \+ root\.shellQuote\(cmd\)\)/)
   assert.match(widget, /function shellQuote\(value\)/)
   assert.doesNotMatch(widget, /id: launchProc/)
   assert.doesNotMatch(widget, /launchStartedAt/)
@@ -118,6 +118,10 @@ test("the widget scans with python3, shows the badge, and opens the panel", () =
   assert.match(widget, /root\.repos\[i\]\.id === root\.pendingRepo && root\.repos\[i\]\.count === 0/)
   assert.match(widget, /Model\.updateCommandFor\(repo, root\.updateScriptPath\)/)
   assert.match(widget, /updateScriptPath: .*scripts\/update_plugins_themes\.py/)
+  // The scanner and its updater live under the Hexciri plugin dir, and
+  // the last-good cache lives under ~/.cache/hexciri.
+  assert.match(widget, /\.config\/hexciri\/plugins\/pizza\.dirty\.arch-updates\/scripts\/check_updates\.py/)
+  assert.match(widget, /\/hexciri\/pizza\.dirty\.arch-updates\.json/)
   assert.match(widget, /fastPollTimer/)
   // The standalone settings window, one per bar surface.
   assert.match(widget, /SystemSettings \{/)
@@ -134,8 +138,8 @@ test("the panel lists pending packages per source with an update button each", (
   // Versioned entries show old → new; git entries show commits behind.
   assert.match(panel, /modelData\.from \+ " → "/)
   assert.match(panel, /commits behind/)
-  // The combined section notes an available Omarchy update.
-  assert.match(panel, /Omarchy update available/)
+  // The combined section notes an available Hexciri update.
+  assert.match(panel, /Hexciri update available/)
   // Each card's Update button calls the widget's updater and closes.
   assert.match(panel, /text: "Update"/)
   assert.match(panel, /onClicked: root\.updateRepo\(modelData\.id\)/)
@@ -204,8 +208,14 @@ test("the scanner emits the combined system repo and per-source flags", () => {
   const scanner = read("scripts/check_updates.py")
   assert.match(scanner, /"system"/)
   assert.match(scanner, /"system",\s+"System",/)
-  assert.match(scanner, /omarchyPending/)
-  assert.match(scanner, /OMARCHY_PACKAGES/)
+  assert.match(scanner, /hexciriPending/)
+  assert.match(scanner, /hexciri_checkout_behind/)
+  assert.match(scanner, /HEXCIRI_PATH/)
+  assert.match(scanner, /HEXCIRI_SYSTEM_PATH/)
+  // No Hexciri pacman package exists, so the old Omarchy package list
+  // and pending flag are gone, not renamed.
+  assert.doesNotMatch(scanner, /OMARCHY_PACKAGES/)
+  assert.doesNotMatch(scanner, /omarchyPending/)
   assert.match(scanner, /--no-aur/)
   assert.match(scanner, /--no-flatpak/)
   assert.match(scanner, /--no-mise/)

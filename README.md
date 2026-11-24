@@ -5,22 +5,21 @@ Shows how many updates are waiting, right in the bar. A package icon when you ar
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/Deoxizn/Arch-Updates.git --enable
-command -v checkupdates || omarchy-pkg-add pacman-contrib
-omarchy restart shell
+hexciri plugin add https://github.com/Deoxizn/Arch-Updates --branch nyx --enable --yes
+hexciri restart shell
 ```
 
 Update it later with:
 
 ```bash
-omarchy plugin update pizza.dirty.arch-updates --yes
-omarchy restart shell
+hexciri plugin update pizza.dirty.arch-updates --yes
+hexciri restart shell
 ```
 
 If the icon does not show up, place it on the bar:
 
 ```bash
-omarchy bar put pizza.dirty.arch-updates --section right
+hexciri bar put pizza.dirty.arch-updates --section right
 ```
 
 ## Use it
@@ -31,7 +30,9 @@ omarchy bar put pizza.dirty.arch-updates --section right
 - Right click: open settings.
 - In the list: `R` checks again, `S` opens settings, `Esc` closes it.
 
-System and Arch updates run together with `omarchy update`. The other sources use their own safe command: AUR (`yay -Sua` / `paru -Sua`), Flatpak (`flatpak update`), Plugins & Themes (`omarchy plugin update --yes; omarchy theme update`), mise (`mise up`).
+System and Arch updates run together with `hexciri update`. The other sources use their own safe command: AUR (`yay -Sua` / `paru -Sua`), Flatpak (`flatpak update`), Plugins & Themes (`hexciri plugin update --yes; hexciri theme update`), mise (`mise up`).
+
+`checkupdates` (pacman-contrib) is already installed by the Hexciri installer, so there is nothing else to install.
 
 ## Settings
 

@@ -9,7 +9,7 @@ import qs.Ui
 
 // Standalone system settings. A floating layer-shell window with the same
 // controls as the bar's settings window System tab, for when the
-// arch-updates plugin runs on its own (stock Omarchy bar, no Nyxiri bar),
+// arch-updates plugin runs on its own (stock Hexciri bar, no Nyxiri bar),
 // where there is no bar settings window to open. Opened by right-clicking
 // the badge; the widget's toggleSettings() flips it.
 // Every control writes through hostWidget.setSystem(), which is the same

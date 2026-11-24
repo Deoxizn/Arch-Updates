@@ -37,20 +37,19 @@ function boolValue(value, fallback) {
   return value !== false
 }
 
-// The combined Omarchy + Arch repo is the only one whose update action is
-// the managed pipeline. A bare pacman system upgrade bypasses Omarchy's
-// guard and skips the transcript, snapshot, keyrings, migrations, and
-// post-update hooks, so it is never an update action here, not even with
-// the direct-pacman override env var set.
+// The combined Hexciri + Arch repo is the only one whose update action is
+// the managed pipeline. A bare pacman system upgrade bypasses the managed
+// pipeline and skips the transcript, keyrings, migrations, and
+// post-update hooks, so it is never an update action here.
 // Commands are bare, with no wait-for-keypress suffix: the widget runs
-// them through omarchy-launch-floating-terminal-with-presentation, whose
-// wrapper shows the Omarchy logo, runs the command, then shows Done and
+// them through hexciri-launch-floating-terminal-with-presentation, whose
+// wrapper shows the Hexciri logo, runs the command, then shows Done and
 // waits for a keypress itself. (The 2.0.0 read-prompt suffix was a
 // workaround for plain xdg-terminal-exec closing instantly on success;
 // with the wrapper it would prompt twice.)
 function updateCommandFor(repo, updateScriptPath) {
   var id = String((repo && repo.id) || "")
-  if (id === "system") return "omarchy update"
+  if (id === "system") return "hexciri update"
   if (id === "aur") {
     var helper = String((repo && repo.updater) || "")
     if (AUR_HELPERS.indexOf(helper) === -1) return ""
@@ -60,12 +59,12 @@ function updateCommandFor(repo, updateScriptPath) {
   if (id === "plugins") {
     // Selective update: scripts/update_plugins_themes.py checks each
     // plugin and theme first and only pulls the ones behind upstream.
-    // The blanket `omarchy plugin update --yes; omarchy theme update`
+    // The blanket `hexciri plugin update --yes; hexciri theme update`
     // touches every plugin and pulls every theme on each run. It stays
     // as the fallback when the widget did not pass a script path.
     var script = String(updateScriptPath || "")
     if (script) return "python3 " + script
-    return "omarchy plugin update --yes; omarchy theme update"
+    return "hexciri plugin update --yes; hexciri theme update"
   }
   if (id === "mise") return "MISE_MINIMUM_RELEASE_AGE=0 mise up"
   return ""
@@ -114,7 +113,7 @@ function parseRepoList(raw) {
       installed: source.installed === true,
       packages: packages
     }
-    if (id === "system") repo.omarchyPending = source.omarchyPending === true
+    if (id === "system") repo.hexciriPending = source.hexciriPending === true
     if (id === "aur") {
       var updater = text(source.updater, 32)
       repo.updater = AUR_HELPERS.indexOf(updater) === -1 ? "" : updater

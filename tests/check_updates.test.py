@@ -80,10 +80,10 @@ class TestThemeBehind(unittest.TestCase):
             self.assertIsNone(check_updates.theme_behind(Path("/tmp/theme-a")))
 
 
-class TestOmarchyCheckoutBehind(unittest.TestCase):
+class TestHexciriCheckoutBehind(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.checkout = Path(self.tmp.name) / "omarchy"
+        self.checkout = Path(self.tmp.name) / "hexciri"
         (self.checkout / ".git").mkdir(parents=True)
 
     def tearDown(self):
@@ -102,19 +102,52 @@ class TestOmarchyCheckoutBehind(unittest.TestCase):
                 return fake_result(0, "4\n")
             return fake_result(1)
 
-        with patch.dict(os.environ, {"OMARCHY_PATH": str(self.checkout)}), patch.object(
-            check_updates, "run_git", side_effect=fake_run_git
-        ):
-            return check_updates.omarchy_checkout_behind(), calls
+        with patch.dict(
+            os.environ,
+            {"HEXCIRI_PATH": str(self.checkout), "HOME": self.tmp.name},
+        ), patch.object(check_updates, "run_git", side_effect=fake_run_git):
+            return check_updates.hexciri_checkout_behind(), calls
 
     def test_valid_ref_counts_behind(self):
         entry, calls = self.run_checkout("origin/main\n")
-        self.assertEqual(entry, {"name": "omarchy-dev-checkout", "behind": 4})
+        self.assertEqual(entry, {"name": "hexciri-dev-checkout", "behind": 4})
         self.assertIn(["rev-list", "--count", "HEAD..origin/main"], calls)
+
+    def test_nyx_clone_fallback_when_no_dev_checkout(self):
+        # No HEXCIRI_PATH (packaged build): the ~/.local/opt/hexciri-nyx
+        # installer-repo clone is the live pending signal.
+        home = Path(self.tmp.name)
+        clone = home / ".local" / "opt" / "hexciri-nyx"
+        (clone / ".git").mkdir(parents=True)
+
+        def fake_run_git(args, cwd, timeout=15):
+            if args[0] == "rev-parse":
+                return fake_result(0, "origin/nyx\n")
+            if args[0] == "fetch":
+                return fake_result(0)
+            if args[0] == "rev-list":
+                return fake_result(0, "2\n")
+            return fake_result(1)
+
+        env = {"HEXCIRI_PATH": "/usr/share/hexciri", "HOME": str(home)}
+        with patch.dict(os.environ, env), patch.object(
+            check_updates, "run_git", side_effect=fake_run_git
+        ):
+            self.assertEqual(
+                check_updates.hexciri_checkout_behind(),
+                {"name": "hexciri-dev-checkout", "behind": 2},
+            )
+
+    def test_packaged_build_with_no_clone_is_none(self):
+        with patch.dict(
+            os.environ,
+            {"HEXCIRI_PATH": "/usr/share/hexciri", "HOME": self.tmp.name},
+        ):
+            self.assertIsNone(check_updates.hexciri_checkout_behind())
 
     def test_full_sha_ref_is_accepted(self):
         entry, _ = self.run_checkout("a" * 40 + "\n")
-        self.assertEqual(entry, {"name": "omarchy-dev-checkout", "behind": 4})
+        self.assertEqual(entry, {"name": "hexciri-dev-checkout", "behind": 4})
 
     def test_malicious_ref_is_rejected_before_rev_list(self):
         entry, calls = self.run_checkout("origin/main --upload-pack=touch /tmp/pwned\n")
@@ -127,12 +160,15 @@ class TestOmarchyCheckoutBehind(unittest.TestCase):
         self.assertFalse(any(args[0] == "rev-list" for args in calls))
 
     def test_goes_through_run_git_not_raw_run(self):
-        with patch.dict(os.environ, {"OMARCHY_PATH": str(self.checkout)}), patch.object(
+        with patch.dict(
+            os.environ,
+            {"HEXCIRI_PATH": str(self.checkout), "HOME": self.tmp.name},
+        ), patch.object(
             check_updates, "run_git", side_effect=lambda *a, **k: fake_result(1)
         ), patch.object(
             check_updates, "run", side_effect=AssertionError("raw run() must not be used")
         ):
-            self.assertIsNone(check_updates.omarchy_checkout_behind())
+            self.assertIsNone(check_updates.hexciri_checkout_behind())
 
 
 class TestThemeDirs(unittest.TestCase):
@@ -149,7 +185,7 @@ class TestThemeDirs(unittest.TestCase):
             link.symlink_to(outside, target_is_directory=True)
             lines = [str(inside), str(outside), str(link), "/etc/passwd", ""]
             with patch.object(check_updates, "THEMES_DIR", base), patch.object(
-                shutil, "which", return_value="/usr/bin/omarchy-theme-extras"
+                shutil, "which", return_value="/usr/bin/hexciri-theme-extras"
             ), patch.object(check_updates, "command_lines", return_value=lines):
                 self.assertEqual(check_updates.theme_dirs(), [inside.resolve()])
 
@@ -173,7 +209,7 @@ class TestMainContract(unittest.TestCase):
             patch.object(check_updates, "check_aur", return_value=stubs.get("aur", [])),
             patch.object(check_updates, "check_flatpak", return_value=stubs.get("flatpak", [])),
             patch.object(check_updates, "check_mise", return_value=stubs.get("mise", [])),
-            patch.object(check_updates, "omarchy_checkout_behind", return_value=stubs.get("checkout")),
+            patch.object(check_updates, "hexciri_checkout_behind", return_value=stubs.get("checkout")),
             patch.object(check_updates, "git_plugin_dirs", return_value=stubs.get("plugin_dirs", [])),
             patch.object(check_updates, "theme_dirs", return_value=stubs.get("theme_dirs", [])),
             patch.object(check_updates, "check_plugins", return_value=stubs.get("plugins", [])),
@@ -193,13 +229,13 @@ class TestMainContract(unittest.TestCase):
                 p.stop()
 
     def test_combined_system_repo_and_total(self):
-        # The omarchy package rides inside the repo list; the combined
-        # section counts it once and flags omarchyPending.
+        # The repo packages land in the combined section; with no
+        # Hexciri checkout behind, hexciriPending stays false.
         data = self.run_main(
             [],
             {
                 "repo": [
-                    {"name": "omarchy", "from": "4.5.0-1", "to": "4.5.1-1"},
+                    {"name": "linux", "from": "6.15.2-1", "to": "6.15.3-1"},
                     {"name": "firefox", "from": "140.0-1", "to": "141.0-1"},
                 ],
                 "helper": "yay",
@@ -216,12 +252,34 @@ class TestMainContract(unittest.TestCase):
         self.assertEqual(system["name"], "System")
         self.assertEqual(system["count"], 2)
         self.assertTrue(system["installed"])
-        self.assertTrue(system["omarchyPending"])
+        self.assertFalse(system["hexciriPending"])
         self.assertEqual(by_id["aur"]["updater"], "yay")
         self.assertEqual(by_id["plugins"]["count"], 1)
         self.assertEqual(by_id["plugins"]["packages"][0]["behind"], 3)
         # Total counts every pending update once.
         self.assertEqual(data["total"], 2 + 1 + 1 + 1 + 1)
+
+    def test_hexciri_checkout_behind_flags_pending(self):
+        # A behind Hexciri checkout joins the system repo first and
+        # flags hexciriPending; the repo packages still count once each.
+        data = self.run_main(
+            [],
+            {
+                "repo": [
+                    {"name": "firefox", "from": "140.0-1", "to": "141.0-1"},
+                    {"name": "linux", "from": "6.15.2-1", "to": "6.15.3-1"},
+                ],
+                "checkout": {"name": "hexciri-dev-checkout", "behind": 4},
+            },
+            which=lambda name: "/usr/bin/" + name,
+        )
+        by_id = {repo["id"]: repo for repo in data["repos"]}
+        system = by_id["system"]
+        self.assertEqual(system["count"], 3)
+        self.assertTrue(system["hexciriPending"])
+        self.assertEqual(system["packages"][0]["name"], "hexciri-dev-checkout")
+        self.assertEqual(system["packages"][0]["behind"], 4)
+        self.assertEqual(data["total"], 3)
 
     def test_no_aur_flag_hides_the_row(self):
         data = self.run_main(
