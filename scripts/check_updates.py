@@ -163,7 +163,7 @@ def check_aur(helper):
     """AUR updates from the helper's -Qua output."""
     if helper is None:
         return []
-    lines = command_lines([helper, "-Qua"], timeout=60, require_ok=False)
+    lines = command_lines([helper, "-Qua"], timeout=120, require_ok=False)
     packages = parse_version_lines(lines)
     for package in packages:
         # -Qua sometimes prefixes names with "aur/".
@@ -285,15 +285,37 @@ def run_git(args, cwd, timeout=GIT_FETCH_TIMEOUT_S):
     )
 
 
-def plugin_behind(dir_path):
-    """A package entry for a plugin behind origin, else None.
+def checked_out_branch(dir_path):
+    """The checked-out branch name, or None when detached/unknown.
 
-    Mirrors `hexciri-plugin-update`: fetch origin HEAD, then count the
-    commits FETCH_HEAD has that HEAD lacks. Offline plugins, and checkouts
-    only ahead of origin (local work, a feature branch), are skipped: the
+    A plugin on nyx must be compared against nyx, not origin HEAD
+    (main): main moving ahead would otherwise count a fully up-to-date
+    nyx plugin as behind forever, and the updater (which pulls the
+    checked-out branch) would never clear it.
+    """
+    head = run_git(["rev-parse", "--abbrev-ref", "HEAD"], dir_path, timeout=15)
+    if head is None or head.returncode != 0:
+        return None
+    branch = (head.stdout or "").strip()
+    if not branch or branch == "HEAD" or not is_safe_git_ref(branch):
+        return None
+    return branch
+
+
+def plugin_behind(dir_path):
+    """A package entry for a plugin behind its checked-out branch, else None.
+
+    Mirrors `hexciri-plugin-update` (patched 2026-11-24): fetch the
+    checked-out branch, then count the commits FETCH_HEAD has that HEAD
+    lacks; detached HEAD falls back to origin HEAD. Offline plugins, and
+    checkouts only ahead of their branch (local work), are skipped: the
     updater has nothing to pull for them.
     """
-    fetch = run_git(["fetch", "--quiet", "origin", "HEAD"], dir_path)
+    branch = checked_out_branch(dir_path)
+    if branch is not None:
+        fetch = run_git(["fetch", "--quiet", "origin", branch], dir_path)
+    else:
+        fetch = run_git(["fetch", "--quiet", "origin", "HEAD"], dir_path)
     if fetch is None or fetch.returncode != 0:
         return None
     head = run_git(["rev-parse", "HEAD"], dir_path)
@@ -440,17 +462,27 @@ def main(argv=None):
     plugin_dirs = git_plugin_dirs()
     themes = theme_dirs()
 
-    repo_updates = check_repo()
-    aur_updates = [] if args.no_aur else check_aur(helper)
-    flatpak_updates = [] if args.no_flatpak else check_flatpak()
-    mise_updates = [] if args.no_mise else check_mise(mise)
-    checkout = hexciri_checkout_behind()
-    if args.no_plugins:
-        plugin_updates = []
-        theme_updates = []
-    else:
-        plugin_updates = check_plugins(plugin_dirs)
-        theme_updates = check_themes(themes)
+    # Sources are independent subprocesses (repo DB sync, AUR RPC,
+    # Flatpak remote, mise, git fetches). Run them in parallel: the
+    # sequential scan summed to minutes, and the widget's fast poll
+    # (10s ticks, 30-poll budget) could expire before any fresh result
+    # landed, leaving the badge stale until the 1800s timer. Output
+    # shape is unchanged; each source keeps its own timeout.
+    with ThreadPoolExecutor(max_workers=7) as pool:
+        f_repo = pool.submit(check_repo)
+        f_aur = pool.submit(check_aur, helper) if not args.no_aur else None
+        f_flatpak = pool.submit(check_flatpak) if not args.no_flatpak else None
+        f_mise = pool.submit(check_mise, mise) if not args.no_mise else None
+        f_checkout = pool.submit(hexciri_checkout_behind)
+        f_plugins = pool.submit(check_plugins, plugin_dirs) if not args.no_plugins else None
+        f_themes = pool.submit(check_themes, themes) if not args.no_plugins else None
+        repo_updates = f_repo.result()
+        aur_updates = [] if f_aur is None else f_aur.result()
+        flatpak_updates = [] if f_flatpak is None else f_flatpak.result()
+        mise_updates = [] if f_mise is None else f_mise.result()
+        checkout = f_checkout.result()
+        plugin_updates = [] if f_plugins is None else f_plugins.result()
+        theme_updates = [] if f_themes is None else f_themes.result()
 
     # The combined Hexciri + Arch repo: the repo packages, plus the
     # Hexciri checkout behind entry when there is one. No Hexciri package

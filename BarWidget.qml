@@ -403,8 +403,16 @@ BarWidget {
     running: false
     repeat: true
     onTriggered: {
+      // Only count ticks where a scan actually started. runCheck() is a
+      // no-op while a scan is already running, and a full scan is minutes
+      // (repo sync + AUR RPC + mise + git fetches): counting no-op ticks
+      // spent the 30-poll budget before any fresh result landed, and
+      // stopFastPoll()'s own runCheck() also no-opped mid-scan, so no
+      // new scan was scheduled until the 1800s timer and the badge
+      // stayed stale. A tick with a scan in flight costs nothing.
+      var started = !checkProc.running
       root.runCheck()
-      root.fastPollCount++
+      if (started) root.fastPollCount++
       // Back off while the updater terminal stays open: early polls catch
       // a quick update, later ones just keep the numbers from going stale.
       if (root.fastPollCount >= 5) fastPollTimer.interval = 30000

@@ -119,15 +119,32 @@ def theme_behind_count(dir_path):
     return int(count)
 
 
-def plugin_behind_count(dir_path):
-    """Commits dir_path is behind origin HEAD, or None if unknown.
+def checked_out_branch(dir_path):
+    """The checked-out branch name, or None when detached/unknown."""
+    head = run_git(["rev-parse", "--abbrev-ref", "HEAD"], dir_path, timeout=15)
+    if head is None or head.returncode != 0:
+        return None
+    branch = (head.stdout or "").strip()
+    if not branch or branch == "HEAD":
+        return None
+    return branch
 
-    Mirrors the scanner's plugin_behind and `hexciri-plugin-update`:
-    fetch origin HEAD, then count the commits FETCH_HEAD has that HEAD
-    lacks. A checkout only ahead of origin (local work, a feature
-    branch) counts as 0: the updater has nothing to pull for it.
+
+def plugin_behind_count(dir_path):
+    """Commits dir_path is behind its checked-out branch, or None if unknown.
+
+    Mirrors the scanner's plugin_behind and `hexciri-plugin-update`
+    (patched 2026-11-24): fetch the checked-out branch, not origin
+    HEAD (main), or a nyx plugin counts as behind main forever while
+    the updater pulls nyx and never clears it. A checkout only ahead
+    of its branch (local work, a feature branch) counts as 0: the
+    updater has nothing to pull for it.
     """
-    fetch = run_git(["fetch", "--quiet", "origin", "HEAD"], dir_path)
+    branch = checked_out_branch(dir_path)
+    if branch is not None:
+        fetch = run_git(["fetch", "--quiet", "origin", branch], dir_path)
+    else:
+        fetch = run_git(["fetch", "--quiet", "origin", "HEAD"], dir_path)
     if fetch is None or fetch.returncode != 0:
         return None
     head = run_git(["rev-parse", "HEAD"], dir_path, timeout=15)
